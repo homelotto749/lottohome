@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>HOMELOTTO 7/49</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background-color: #f4f4f4; }
+        .header { background: #333; color: #fff; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .container { display: flex; gap: 20px; }
+        
+        /* Левая колонка - Выбор билетов */
+        .tickets-area { flex: 3; }
+        .tickets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+        
+        /* Карточка билета (чекбокс скрыт, стилизуем label) */
+        .ticket-card { display: none; } /* Скрываем сам чекбокс */
+        .ticket-label {
+            display: block;
+            border: 2px solid #007bff;
+            background: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: 0.2s;
+        }
+        .ticket-label:hover { background: #e6f2ff; }
+        /* Если чекбокс выбран - меняем цвет */
+        .ticket-card:checked + .ticket-label {
+            background: #007bff;
+            color: white;
+            border-color: #0056b3;
+            transform: scale(1.05);
+        }
+        .nums { font-size: 12px; color: #555; margin-top: 5px; }
+        .ticket-card:checked + .ticket-label .nums { color: #fff; }
+
+        /* Правая колонка - Корзина и Оплата */
+        .sidebar { flex: 1; background: white; padding: 20px; border-radius: 8px; height: fit-content; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        input, select, button { width: 100%; padding: 10px; margin-bottom: 10px; box-sizing: border-box; }
+        button.pay-btn { background: green; color: white; font-size: 18px; border: none; cursor: pointer; }
+        .total-price { font-size: 24px; font-weight: bold; text-align: center; margin: 10px 0; }
+        
+        .alert { padding: 10px; background: #d4edda; color: #155724; margin-bottom: 15px; border-radius: 5px; }
+    </style>
+    
+    <script>
+        // Скрипт для подсчета суммы в реальном времени
+        function updateTotal() {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+            const price = 100; // Цена билета (хардкод пока)
+            const total = checkboxes.length * price;
+            document.getElementById('totalDisplay').innerText = total + " руб.";
+            document.getElementById('totalInput').value = total;
+        }
+    </script>
+</head>
+<body>
+
+    <div class="header">
+        <h2>🏪 Касса: {{ email }}</h2>
+        <a href="/" style="color: #ccc;">На главную</a>
+    </div>
+
+    <!-- Сообщения -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Выбор тиража -->
+    <form action="/cashier" method="get" style="margin-bottom: 20px;">
+        <label>Выберите тираж для продажи:</label>
+        <select name="draw_id" onchange="this.form.submit()">
+            <option value="" disabled {% if not current_draw %}selected{% endif %}>-- Выберите тираж --</option>
+            {% for draw in draws %}
+                <option value="{{ draw.id }}" {% if current_draw == draw.id %}selected{% endif %}>
+                    Тираж #{{ draw.id }} (от {{ draw.date }})
+                </option>
+            {% endfor %}
+        </select>
+    </form>
+
+    {% if current_draw %}
+    <form action="/buy_tickets" method="post">
+        <div class="container">
+            <!-- Секция с билетами -->
+            <div class="tickets-area">
+                <h3>🎟 Доступные билеты (Тираж {{ current_draw }})</h3>
+                <div class="tickets-grid">
+                    {% for t in tickets %}
+                        <input type="checkbox" name="ticket_ids" value="{{ t.id }}" id="t_{{ t.id }}" class="ticket-card" onclick="updateTotal()">
+                        <label for="t_{{ t.id }}" class="ticket-label">
+                            <strong>Билет #{{ t.ticket_number }}</strong>
+                            <div class="nums">{{ t.numbers }}</div>
+                        </label>
+                    {% else %}
+                        <p>Нет доступных билетов или все распроданы!</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Сайдбар оплаты -->
+            <div class="sidebar">
+                <h3>💳 Оплата</h3>
+                <div class="total-price" id="totalDisplay">0 руб.</div>
+                <input type="hidden" name="total_amount" id="totalInput" value="0">
+                <input type="hidden" name="draw_id" value="{{ current_draw }}">
+
+                <label>Способ оплаты:</label>
+                <select name="payment_method">
+                    <option value="cash">💵 Наличные</option>
+                    <option value="card">💳 Карта</option>
+                </select>
+
+                <label>Получено от клиента (для сдачи):</label>
+                <input type="number" name="cash_received" placeholder="Например: 500">
+
+                <button type="submit" class="pay-btn">ОПЛАТИТЬ</button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+
+</body>
+</html>

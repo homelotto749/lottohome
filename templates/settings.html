@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Настройки</title>
+    <style>body { font-family: sans-serif; padding: 20px; }</style>
+</head>
+<body>
+    <h1>⚙ Настройки системы</h1>
+    <form action="/save_settings" method="post">
+        <label>Адрес магазина (для чека):</label><br>
+        <textarea name="shop_address" rows="4" cols="50">{{ address }}</textarea><br><br>
+        <button type="submit">Сохранить</button>
+    </form>
+    <br><a href="/">На главную</a>
+</body>
+</html>

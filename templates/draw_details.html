@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Детали тиража</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; cursor: pointer; }
+        .filter-btn { padding: 5px 10px; margin-right: 5px; cursor: pointer; background: #eee; border: 1px solid #ccc; }
+        .active { background: #007bff; color: white; }
+    </style>
+</head>
+<body>
+    <h1>📊 Статистика Тиража #{{ draw.id }}</h1>
+    <p>Выигрышные числа: <strong>{{ draw.winning_numbers }}</strong></p>
+    <p><a href="/organizer">← Назад</a></p>
+    
+    <h3>Выигравшие билеты</h3>
+    <div>
+        Фильтр совпадений: 
+        <a href="?matches=all" class="filter-btn">Все</a>
+        <a href="?matches=7" class="filter-btn">7 (Джекпот)</a>
+        <a href="?matches=6" class="filter-btn">6</a>
+        <a href="?matches=5" class="filter-btn">5</a>
+        <a href="?matches=4" class="filter-btn">4</a>
+        <a href="?matches=3" class="filter-btn">3</a>
+        <a href="?matches=2" class="filter-btn">2</a>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Билет</th>
+                <th>Числа билета</th>
+                <th>Совпадений</th>
+                <th>Выигрыш</th>
+                <th>Статус</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in tickets %}
+            <tr>
+                <td>{{ t.id }}</td>
+                <td>{{ t.numbers }}</td>
+                <td>{{ t.matches_count }}</td>
+                <td>{{ t.win_amount }} руб.</td>
+                <td>
+                    {% if t.status == 'paid' %} ✅ Выплачен
+                    {% else %} 🕒 Ожидает выплаты
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">Нет билетов с такими параметрами</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

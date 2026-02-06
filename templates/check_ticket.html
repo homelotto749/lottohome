@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Проверка билета</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f4f4f4; text-align: center; }
+        .container { max-width: 500px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        input { font-size: 20px; padding: 10px; width: 80%; text-align: center; margin-bottom: 20px; }
+        button { padding: 10px 20px; font-size: 18px; cursor: pointer; }
+        .result-box { margin-top: 20px; padding: 20px; border-radius: 5px; }
+        .win { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .lose { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .paid { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .pay-btn { background: green; color: white; border: none; width: 100%; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>🔍 Проверка билета</h2>
+        <p><a href="/">На главную</a></p>
+
+        <!-- Форма поиска -->
+        <form action="/check_ticket" method="post">
+            <label>Введите номер билета (например, 001-005):</label><br>
+            <input type="text" name="ticket_full_id" placeholder="ID билета" required value="{{ searched_id if searched_id }}">
+            <br>
+            <button type="submit">ПРОВЕРИТЬ</button>
+        </form>
+
+        <!-- Результат проверки -->
+        {% if ticket %}
+            <div class="result-box {% if ticket.status == 'paid' %}paid{% elif ticket.win_amount > 0 %}win{% else %}lose{% endif %}">
+                <h3>Билет #{{ ticket.id }}</h3>
+                <p>Совпадений: <strong>{{ ticket.matches_count }}</strong></p>
+                
+                {% if ticket.status == 'paid' %}
+                    <h2>✅ ВЫПЛАЧЕНО РАНЕЕ</h2>
+                    <p>Сумма: {{ ticket.win_amount }} руб.</p>
+                
+                {% elif ticket.win_amount > 0 %}
+                    <h2>🎉 ВЫИГРЫШ: {{ ticket.win_amount }} руб.</h2>
+                    <form action="/payout" method="post">
+                        <input type="hidden" name="ticket_id" value="{{ ticket.id }}">
+                        <button type="submit" class="pay-btn">💰 ВЫДАТЬ ДЕНЬГИ</button>
+                    </form>
+                
+                {% else %}
+                    <h2>😞 Без выигрыша</h2>
+                {% endif %}
+            </div>
+        {% elif message %}
+            <p style="color: red; margin-top: 20px;">{{ message }}</p>
+        {% endif %}
+    </div>
+
+</body>
+</html>

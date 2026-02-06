@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HOMELOTTO 7/49</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #1e3c72, #2a5298); height: 100vh; display: flex; align-items: center; justify-content: center; color: white; }
+        .dashboard { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); text-align: center; max-width: 500px; width: 90%; }
+        h1 { margin-bottom: 10px; font-size: 2.5em; letter-spacing: 2px; }
+        .btn-grid { display: grid; grid-template-columns: 1fr; gap: 15px; margin-top: 20px; }
+        .btn { display: block; padding: 15px 20px; text-decoration: none; color: white; font-weight: bold; border-radius: 10px; transition: 0.3s; font-size: 1.1em; border: none; cursor: pointer; }
+        
+        .btn-cass { background: linear-gradient(to right, #00b09b, #96c93d); }
+        .btn-check { background: linear-gradient(to right, #f2994a, #f2c94c); }
+        .btn-org { background: linear-gradient(to right, #ff512f, #dd2476); }
+        .btn-set { background: linear-gradient(to right, #373b44, #4286f4); }
+        
+        .btn:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .role-badge { display: inline-block; padding: 5px 10px; background: rgba(0,0,0,0.3); border-radius: 15px; font-size: 0.8em; }
+        .logout-link { display: block; margin-top: 30px; color: #ccc; text-decoration: none; font-size: 0.9em; }
+        .wait-box { background: rgba(255,0,0,0.2); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,0,0,0.3); }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <h1>HOMELOTTO 7/49</h1>
+        <div class="role-badge">{{ email }} (Роль: {{ role|upper }})</div>
+        
+        <div class="btn-grid">
+
+            <!-- МЕНЮ КАССИРА -->
+            {% if role == 'cass' or role == 'admin' %}
+                <a href="/cashier" class="btn btn-cass">🏪 КАССА (Продажа)</a>
+                <a href="/check_ticket_page" class="btn btn-check">🔍 ПРОВЕРКА И ВЫПЛАТА</a>
+                <!-- Настройки адреса теперь у кассира -->
+                <a href="/settings" class="btn btn-set">⚙ Настройки чека</a>
+            {% endif %}
+            
+            <!-- МЕНЮ ОРГАНИЗАТОРА -->
+            {% if role == 'org' or role == 'admin' %}
+                <a href="/organizer" class="btn btn-org">💼 ПАНЕЛЬ ОРГАНИЗАТОРА</a>
+            {% endif %}
+
+            <!-- ЗАГЛУШКА ДЛЯ НОВИЧКОВ -->
+            {% if role == 'none' %}
+                <div class="wait-box">
+                    <h3>⏳ Ожидание активации</h3>
+                    <p>Ваша учетная запись создана.</p>
+                    <p>Администратор должен назначить вам роль (Кассир или Организатор) в базе данных.</p>
+                </div>
+            {% endif %}
+
+        </div>
+
+        <a href="/logout" class="logout-link">Выйти из системы</a>
+    </div>
+
+</body>
+</html>

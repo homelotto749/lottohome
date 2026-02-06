@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Проведение розыгрыша</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 50px; background-color: #333; color: white; }
+        .container { max-width: 600px; margin: auto; background: #444; padding: 30px; border-radius: 10px; }
+        .balls-input { display: flex; justify-content: center; gap: 10px; margin: 20px 0; }
+        input[type="number"] { 
+            width: 50px; height: 50px; 
+            font-size: 24px; text-align: center; 
+            border-radius: 50%; border: none; outline: none;
+            font-weight: bold;
+        }
+        button { 
+            background: #ff4444; color: white; border: none; 
+            padding: 15px 30px; font-size: 18px; cursor: pointer; border-radius: 5px; 
+            margin-top: 20px;
+        }
+        button:hover { background: #cc0000; }
+        .back-link { color: #ccc; margin-top: 20px; display: block; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🎱 Розыгрыш Тиража #{{ draw_id }}</h1>
+        <p>Введите 7 чисел, выпавших из лототрона:</p>
+
+        <form action="/run_draw_logic" method="post" onsubmit="return confirm('Вы уверены? Это действие нельзя отменить!')">
+            <input type="hidden" name="draw_id" value="{{ draw_id }}">
+            
+            <div class="balls-input">
+                <input type="number" name="n1" min="1" max="49" required>
+                <input type="number" name="n2" min="1" max="49" required>
+                <input type="number" name="n3" min="1" max="49" required>
+                <input type="number" name="n4" min="1" max="49" required>
+                <input type="number" name="n5" min="1" max="49" required>
+                <input type="number" name="n6" min="1" max="49" required>
+                <input type="number" name="n7" min="1" max="49" required>
+            </div>
+
+            <button type="submit">ЗАВЕРШИТЬ ТИРАЖ</button>
+        </form>
+        
+        <a href="/organizer" class="back-link">Отмена</a>
+    </div>
+
+</body>
+</html>

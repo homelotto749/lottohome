@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Панель Организатора</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .container { max-width: 800px; margin: auto; }
+        .card { border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; border-radius: 8px; background: #f9f9f9; }
+        input, button { padding: 10px; margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>👨‍💼 Панель Организатора</h1>
+        <p>Добро пожаловать, {{ email }} (<a href="/logout">Выйти</a>)</p>
+
+        <!-- Сообщения об ошибках/успехе -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <p class="{{ category }}">{{ message }}</p>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <!-- Форма создания нового тиража -->
+        <div class="card">
+            <h3>🆕 Создать новый тираж</h3>
+            <form action="/create_draw" method="post">
+                <label>Номер тиража (ID):</label><br>
+                <input type="text" name="draw_id" required placeholder="Например: 101"><br>
+                
+                <label>Дата розыгрыша:</label><br>
+                <input type="date" name="draw_date" required><br>
+                
+                <label>Джекпот (руб):</label><br>
+                <input type="number" name="jackpot" value="10000"><br>
+                
+                <label>Количество билетов:</label><br>
+                <input type="number" name="ticket_count" value="50" max="500" required><br>
+                
+                <button type="submit">🚀 Запустить генерацию билетов</button>
+            </form>
+        </div>
+
+        <!-- Список существующих тиражей -->
+        <h3>📜 История тиражей</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Тираж</th>
+                    <th>Дата</th>
+                    <th>Билетов</th>
+                    <th>Статус</th>
+                    <th>Выигрышные числа</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for draw in draws %}
+                <tr>
+                    <td>#{{ draw.id }}</td>
+                    <td>{{ draw.date }}</td>
+                    <td>{{ draw.total_tickets }}</td>
+<td>
+    {% if draw.status == 'open' %}
+        <span style="color: green; font-weight: bold;">🟢 Идет продажа</span><br>
+        <a href="/play_draw/{{ draw.id }}" style="background: red; color: white; padding: 5px; text-decoration: none; font-size: 12px; border-radius: 3px;">🎱 ПРОВЕСТИ РОЗЫГРЫШ</a>
+    {% elif draw.status == 'closed' %}
+        <span style="color: red;">🔴 Завершен</span>
+        <a href="/draw_details/{{ draw.id }}">📊 Статистика</a>
+    {% endif %}
+</td>
+                    <td>{{ draw.winning_numbers if draw.winning_numbers else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

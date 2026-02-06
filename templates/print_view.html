@@ -2,29 +2,49 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Печать</title>
+    <title>Печать билетов HOMELOTO</title>
     <style>
-        body { text-align: center; font-family: sans-serif; }
-        img { border: 1px solid black; margin: 10px; max-width: 100%; }
-        .debug { color: red; font-size: 12px; background: #eee; padding: 5px; }
+        body { background: #555; text-align: center; font-family: sans-serif; }
+        .page { 
+            background: white; 
+            width: 210mm; 
+            min-height: 297mm; 
+            margin: 20px auto; 
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .controls { padding: 10px; color: white; }
+        .ticket-img { max-width: 100%; margin-bottom: 20px; border: 1px dashed #ccc; }
+        .receipt-img { max-width: 300px; margin-bottom: 40px; border: 1px solid #eee; }
+        
+        @media print {
+            body { background: white; }
+            .controls { display: none; }
+            .page { box-shadow: none; margin: 0; width: 100%; }
+        }
     </style>
 </head>
 <body>
-    <h2>Покупка завершена</h2>
-    <button onclick="window.print()">Печать</button>
-    <br><a href="/cashier">В кассу</a>
-    <hr>
 
-    <h3>Чек:</h3>
-    <img src="{{ receipt_img }}"><br>
-    
-    <h3>Билеты ({{ tickets_imgs|length }} шт.):</h3>
-    
-    {% for img_url in tickets_imgs %}
-        <!-- ЭТА СТРОКА ПОКАЖЕТ НАМ ПРАВДУ -->
-        <p class="debug">Ссылка сервера: {{ img_url }}</p>
+    <div class="controls">
+        <h2>Покупка завершена!</h2>
+        <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer;">🖨 ПЕЧАТЬ</button>
+        <br><br>
+        <a href="/cashier" style="color: #ddd;">Вернуться в кассу</a>
+    </div>
+
+    <div class="page">
+        <h3>Чек покупателя</h3>
+        <img src="{{ receipt_img }}" class="receipt-img">
         
-        <img src="{{ img_url }}">
-    {% endfor %}
+        <h3>Билеты ({{ tickets_imgs|length }} шт.)</h3>
+        {% for img_url in tickets_imgs %}
+            <img src="{{ img_url }}" class="ticket-img">
+        {% endfor %}
+    </div>
+
 </body>
 </html>

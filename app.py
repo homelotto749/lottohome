@@ -17,7 +17,7 @@ from firebase_admin import credentials, firestore, auth
 from PIL import Image, ImageDraw, ImageFont
 import qrcode
 
-# Штрих-коды
+# Штрих-коды (Оставляем!)
 import barcode
 from barcode.writer import ImageWriter
 
@@ -63,8 +63,8 @@ cloudinary.config(
 # ==========================================
 
 def create_ticket_image(ticket_data, broadcast_link=None):
-    """Рисует билет с русским текстом, штрих-кодом и QR трансляции"""
-    # Размер холста: 650x280 (шире, чтобы влез штрих-код)
+    """Рисует билет HOMELOTO со штрих-кодом, QR и русским текстом"""
+    # Размер холста: 650x280
     width, height = 650, 280
     img = Image.new('RGB', (width, height), color='white')
     draw = ImageDraw.Draw(img)
@@ -72,37 +72,33 @@ def create_ticket_image(ticket_data, broadcast_link=None):
     primary_color = "#4B0082" # Темно-фиолетовый
     
     # --- ШРИФТЫ ---
-    # Пытаемся загрузить font.ttf (должен лежать рядом с app.py)
     try:
         font_header = ImageFont.truetype("font.ttf", 28)
         font_text = ImageFont.truetype("font.ttf", 18)
         font_nums = ImageFont.truetype("font.ttf", 24)
         font_small = ImageFont.truetype("font.ttf", 12)
     except:
-        # Если шрифта нет - аварийный режим (будут квадратики вместо русских букв)
-        print("WARNING: font.ttf не найден! Использую дефолтный шрифт.")
+        print("WARNING: font.ttf не найден! Использую стандартный.")
         font_header = ImageFont.load_default()
         font_text = ImageFont.load_default()
         font_nums = ImageFont.load_default()
         font_small = ImageFont.load_default()
 
-    # --- РИСУЕМ ШАПКУ ---
+    # --- РИСУЕМ ОСНОВУ ---
     draw.rectangle([(0, 0), (width, 60)], fill=primary_color)
     draw.text((20, 15), "HOMELOTO 7/49", font=font_header, fill="white")
     
-    # Полный номер билета (Тираж-Номер)
+    # Полный номер билета
     full_ticket_id = f"{ticket_data['draw_id']}-{ticket_data['ticket_number']}"
     draw.text((450, 20), f"#{full_ticket_id}", font=font_header, fill="white")
     
-    # --- ИНФОРМАЦИЯ ---
-    # Форматируем дату (убираем букву T, если она есть)
+    # Инфо
     date_text = str(ticket_data.get('draw_date', '---')).replace('T', ' ')
-    
     draw.text((20, 70), f"Тираж: {ticket_data['draw_id']}", font=font_text, fill="black")
     draw.text((150, 70), f"Розыгрыш: {date_text}", font=font_text, fill="black")
     draw.text((20, 100), f"Цена: {ticket_data.get('price', 100)} руб", font=font_text, fill="black")
     
-    # --- ЧИСЛА ---
+    # Числа
     numbers = ticket_data['numbers']
     start_x, start_y, gap = 30, 160, 65
     for i, num in enumerate(numbers):
@@ -110,36 +106,33 @@ def create_ticket_image(ticket_data, broadcast_link=None):
         y = start_y
         draw.ellipse([x, y, x+50, y+50], outline=primary_color, width=3)
         
-        # Центрируем число в круге
+        # Центрируем число
         if hasattr(draw, 'textlength'):
             txt_w = draw.textlength(str(num), font=font_nums)
             txt_x = x + (50 - txt_w) / 2
         else:
-            txt_x = x + 15 # Для старых версий Pillow
-            
+            txt_x = x + 15
         draw.text((txt_x, y + 12), str(num), font=font_nums, fill="black")
 
-    # --- ШТРИХ-КОД (Вертикальный справа) ---
+    # --- ШТРИХ-КОД (Вертикальный) ---
     try:
         rv = io.BytesIO()
         Code128 = barcode.get_barcode_class('code128')
         my_barcode = Code128(full_ticket_id, writer=ImageWriter())
-        # Генерируем без текста внизу, чтобы было компактнее
-        my_barcode.write(rv, options={'text_distance': 1, 'font_size': 0, 'module_height': 8, 'write_text': False})
+        
+        # write_text=False ВАЖНО для стабильности на сервере (цифры и так есть в шапке)
+        my_barcode.write(rv, options={'text_distance': 1, 'module_height': 8, 'write_text': False})
+        
         rv.seek(0)
-        
         barcode_img = Image.open(rv)
-        # Поворачиваем на 90 градусов
-        barcode_img = barcode_img.rotate(90, expand=True)
-        # Ресайз, чтобы влез
-        barcode_img.thumbnail((80, 200))
+        barcode_img = barcode_img.rotate(90, expand=True) # Поворот
+        barcode_img.thumbnail((80, 200)) # Ресайз
         
-        # Вставляем справа
-        img.paste(barcode_img, (570, 70))
+        img.paste(barcode_img, (570, 70)) # Вставка справа
     except Exception as e:
-        print(f"Ошибка штрих-кода: {e}")
+        print(f"Ошибка штрих-кода (пропускаем): {e}")
 
-    # --- QR ТРАНСЛЯЦИИ (Если есть ссылка) ---
+    # --- QR ТРАНСЛЯЦИИ ---
     if broadcast_link:
         qr = qrcode.make(broadcast_link)
         qr = qr.resize((80, 80))
@@ -153,13 +146,14 @@ def create_ticket_image(ticket_data, broadcast_link=None):
     
     try:
         res = cloudinary.uploader.upload(img_byte_arr, folder="homeloto_tickets")
+        # ВОЗВРАЩАЕМ ССЫЛКУ!
         return res['secure_url']
     except Exception as e:
         print(f"Ошибка Cloudinary: {e}")
         return "https://via.placeholder.com/650x280?text=Error+Upload"
 
 def create_receipt_image(transaction_id, items, total, date_str, address_text=""):
-    """Рисует чек покупки"""
+    """Рисует чек"""
     width, height = 300, 450 + (len(items) * 20)
     img = Image.new('RGB', (width, height), color='white')
     draw = ImageDraw.Draw(img)
@@ -263,12 +257,11 @@ def create_draw():
     try:
         cnt = int(request.form['ticket_count'])
         jackpot = int(request.form['jackpot'])
-        link = request.form.get('broadcast_link', '') # Ссылка на трансляцию
+        link = request.form.get('broadcast_link', '')
     except: return redirect(url_for('organizer_panel'))
 
-    # Сохраняем тираж
     db.collection('draws').document(did).set({
-        'date': request.form['draw_date'], # Дата+Время
+        'date': request.form['draw_date'],
         'jackpot': jackpot,
         'total_tickets': cnt,
         'broadcast_link': link,
@@ -276,24 +269,17 @@ def create_draw():
         'winning_numbers': []
     })
 
-    # Генерируем билеты
     batch = db.batch()
     for i in range(1, cnt+1):
         nums = sorted(random.sample(range(1, 50), 7))
         full_id = f"{did}-{i:03d}"
         batch.set(db.collection('tickets').document(full_id), {
-            'draw_id': did, 
-            'ticket_number': f"{i:03d}", 
-            'numbers': nums,
-            'status': 'available', 
-            'price': 100, 
-            'win_amount': 0,
-            'draw_date': request.form['draw_date'] # Дублируем дату в билет для картинки
+            'draw_id': did, 'ticket_number': f"{i:03d}", 'numbers': nums,
+            'status': 'available', 'price': 100, 'win_amount': 0,
+            'draw_date': request.form['draw_date']
         })
     batch.commit()
-    
-    flash('Тираж создан!', 'success')
-    return redirect(url_for('organizer_panel'))
+    flash('Тираж создан!', 'success'); return redirect(url_for('organizer_panel'))
 
 # --- КАССИР ---
 @app.route('/cashier')
@@ -313,13 +299,10 @@ def buy_tickets():
     
     ids = request.form.getlist('ticket_ids')
     draw_id = request.form.get('draw_id')
-    
     if not ids: return redirect(url_for('cashier_panel', draw_id=draw_id))
     
-    tr_id = str(uuid.uuid4())
-    now = datetime.now()
-    batch = db.batch()
-    sold_data = []
+    tr_id = str(uuid.uuid4()); now = datetime.now()
+    batch = db.batch(); sold_data = []
     
     for tid in ids:
         d = db.collection('tickets').document(tid).get().to_dict(); d['id'] = tid
@@ -330,11 +313,9 @@ def buy_tickets():
         })
     batch.commit()
     
-    # Получаем ссылку на трансляцию из тиража
     draw_info = db.collection('draws').document(draw_id).get().to_dict()
     broadcast_link = draw_info.get('broadcast_link')
 
-    # Генерируем картинки (передаем ссылку)
     imgs = [create_ticket_image(t, broadcast_link) for t in sold_data]
     
     cfg = db.collection('config').document('main').get()
@@ -374,7 +355,7 @@ def run_draw_logic():
     flash(f'Тираж завершен! Победителей: {wins}', 'success')
     return redirect(url_for('organizer_panel'))
 
-# --- ДЕТАЛИ И ПРОВЕРКА ---
+# --- СТАТИСТИКА ---
 @app.route('/draw_details/<draw_id>')
 def draw_details(draw_id):
     if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))

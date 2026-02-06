@@ -64,28 +64,42 @@ cloudinary.config(
 
 def create_ticket_image(ticket_data, broadcast_link=None):
     print(f"--- НАЧИНАЮ РИСОВАТЬ БИЛЕТ {ticket_data['ticket_number']} ---")
+    
     try:
-        # 1. Рисуем тупо красный квадрат. Никаких шрифтов.
-        img = Image.new('RGB', (200, 100), color='red')
+        # 1. Рисуем простую картинку (Красный фон, как в тесте)
+        # Размер поменьше, чтобы летело быстро
+        img = Image.new('RGB', (400, 200), color='#4B0082') # Фиолетовый фон
         draw = ImageDraw.Draw(img)
-        # Рисуем крестик
-        draw.line((0, 0) + img.size, fill="white", width=5)
         
-        # 2. Сохраняем
+        # Используем встроенный дефолтный шрифт (мелкий, но надежный)
+        font = ImageFont.load_default()
+        
+        # Пишем текст
+        text = f"HOMELOTO\nTICKET #{ticket_data['ticket_number']}\nDraw: {ticket_data['draw_id']}"
+        draw.text((10, 10), text, fill="white", font=font)
+        
+        # Рисуем числа
+        nums = str(ticket_data['numbers'])
+        draw.text((10, 80), f"Numbers: {nums}", fill="white", font=font)
+
+        # 2. Сохраняем в память
         img_byte_arr = io.BytesIO()
         img.save(img_byte_arr, format='PNG')
         img_byte_arr.seek(0)
         
         # 3. Загружаем
         print("--- ОТПРАВЛЯЮ В CLOUDINARY ---")
-        res = cloudinary.uploader.upload(img_byte_arr, folder="test_debug")
+        res = cloudinary.uploader.upload(img_byte_arr, folder="homeloto_tickets")
         
-        print(f"--- УСПЕХ! ССЫЛКА: {res['secure_url']} ---")
-        return res['secure_url']
+        # 4. ЛОГИРУЕМ ССЫЛКУ (Смотри в Logs на Render!)
+        url = res['secure_url']
+        print(f"!!! УСПЕХ !!! ССЫЛКА ПОЛУЧЕНА: {url}")
+        
+        return url
         
     except Exception as e:
-        print(f"--- КРИТИЧЕСКАЯ ОШИБКА: {e} ---")
-        return "https://via.placeholder.com/200x100?text=CRASH"
+        print(f"!!! ОШИБКА ПРИ СОЗДАНИИ БИЛЕТА: {e} !!!")
+        return "https://via.placeholder.com/400x200?text=ERROR"
 
 def create_receipt_image(transaction_id, items, total, date_str, address_text=""):
     """Рисует чек"""
@@ -344,5 +358,6 @@ def save_settings():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 

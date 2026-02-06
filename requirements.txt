@@ -1,0 +1,7 @@
+Flask
+firebase-admin
+requests
+Pillow
+qrcode
+cloudinary
+gunicorn

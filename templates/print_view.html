@@ -38,13 +38,14 @@
 
     <div class="page">
         <h3>Чек покупателя</h3>
-        <img src="{{ url_for('static', filename='img/tickets/' + receipt_img) }}" class="receipt-img">
+        <img src="{{ receipt_img }}" class="receipt-img">
         
         <h3>Билеты ({{ tickets_imgs|length }} шт.)</h3>
         {% for img in tickets_imgs %}
-            <img src="{{ url_for('static', filename='img/tickets/' + img) }}" class="ticket-img">
+            <img src="{{ img_url }}" class="ticket-img">
         {% endfor %}
     </div>
 
 </body>
+
 </html>

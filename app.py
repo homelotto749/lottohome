@@ -41,26 +41,22 @@ cloudinary.config(
   api_secret = os.environ.get('CLOUDINARY_API_SECRET')
 )
 
-# --- ГЕНЕРАТОР БИЛЕТА (НЕУБИВАЕМЫЙ) ---
+# --- ГЕНЕРАТОР БИЛЕТА (КРАСИВЫЙ) ---
 def create_ticket_image(ticket_data, broadcast_link=None):
-    print(f"--- РИСУЕМ БИЛЕТ {ticket_data['ticket_number']} ---")
-    
-    # 1. Основа
+    # 1. Белый фон
     width, height = 650, 280
     img = Image.new('RGB', (width, height), color='white')
     draw = ImageDraw.Draw(img)
     primary_color = "#4B0082" 
     
-    # 2. Шрифты (Безопасная загрузка)
+    # 2. Шрифты
     try:
-        # Пытаемся найти шрифт в текущей папке
         font_path = os.path.join(os.path.dirname(__file__), 'font.ttf')
         font_header = ImageFont.truetype(font_path, 28)
         font_text = ImageFont.truetype(font_path, 18)
         font_nums = ImageFont.truetype(font_path, 24)
         font_small = ImageFont.truetype(font_path, 12)
     except:
-        print("ШРИФТ НЕ НАЙДЕН - ИСПОЛЬЗУЮ СТАНДАРТНЫЙ")
         font_header = ImageFont.load_default()
         font_text = ImageFont.load_default()
         font_nums = ImageFont.load_default()
@@ -78,21 +74,26 @@ def create_ticket_image(ticket_data, broadcast_link=None):
     draw.text((150, 70), f"Дата: {date_text}", font=font_text, fill="black")
     draw.text((20, 100), f"Цена: 100 руб", font=font_text, fill="black")
     
-    # Числа
+    # Числа в кружочках
     numbers = ticket_data['numbers']
     start_x, start_y, gap = 30, 160, 65
     for i, num in enumerate(numbers):
         x = start_x + (i * gap)
         y = start_y
         draw.ellipse([x, y, x+50, y+50], outline=primary_color, width=3)
-        # Центрируем (грубо, но надежно)
-        draw.text((x + 15, y + 12), str(num), font=font_nums, fill="black")
+        
+        # Центрируем число
+        if hasattr(draw, 'textlength'):
+             txt_w = draw.textlength(str(num), font=font_nums)
+             txt_x = x + (50 - txt_w) / 2
+        else:
+             txt_x = x + 15
+        draw.text((txt_x, y + 12), str(num), font=font_nums, fill="black")
 
-    # 4. Штрих-код (В ИЗОЛЯТОРЕ ОШИБОК)
+    # 4. Штрих-код (Безопасный)
     try:
         rv = io.BytesIO()
         Code128 = barcode.get_barcode_class('code128')
-        # write_text=False отключает шрифт внутри баркода (частая причина сбоев)
         my_barcode = Code128(full_ticket_id, writer=ImageWriter())
         my_barcode.write(rv, options={'text_distance': 1, 'module_height': 8, 'write_text': False})
         rv.seek(0)
@@ -100,10 +101,9 @@ def create_ticket_image(ticket_data, broadcast_link=None):
         bc_img = Image.open(rv).rotate(90, expand=True)
         bc_img.thumbnail((80, 200))
         img.paste(bc_img, (570, 70))
-    except Exception as e:
-        print(f"⚠️ Штрих-код не нарисовался: {e}")
-        # Рисуем заглушку, но НЕ ПАДАЕМ
-        draw.rectangle([(570, 70), (600, 200)], outline="red")
+    except:
+        # Если штрих-код не сработал - рисуем просто место под него
+        draw.rectangle([(570, 70), (600, 200)], outline="#eee")
 
     # 5. QR Код
     if broadcast_link:
@@ -120,10 +120,9 @@ def create_ticket_image(ticket_data, broadcast_link=None):
     
     try:
         res = cloudinary.uploader.upload(img_byte_arr, folder="homeloto_tickets")
-        print(f"✅ УСПЕХ: {res['secure_url']}")
         return res['secure_url']
     except Exception as e:
-        print(f"❌ ОШИБКА CLOUDINARY: {e}")
+        print(f"Cloudinary Error: {e}")
         return "https://via.placeholder.com/650x280?text=Error+Cloudinary"
 
 def create_receipt_image(transaction_id, items, total, date_str, address_text=""):

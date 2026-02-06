@@ -5,3 +5,4 @@ Pillow
 qrcode
 cloudinary
 gunicorn
+python-barcode

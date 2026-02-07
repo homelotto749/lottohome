@@ -30,13 +30,16 @@
         
         <div class="btn-grid">
 
-            <!-- МЕНЮ КАССИРА -->
-            {% if role == 'cass' or role == 'admin' %}
-                <a href="/cashier" class="btn btn-cass">🏪 КАССА (Продажа)</a>
-                <a href="/check_ticket_page" class="btn btn-check">🔍 ПРОВЕРКА И ВЫПЛАТА</a>
-                <!-- Настройки адреса теперь у кассира -->
-                <a href="/settings" class="btn btn-set">⚙ Настройки чека</a>
-            {% endif %}
+           {% if role == 'cass' or role == 'admin' %}
+    <a href="/cashier" class="btn btn-cass">🏪 КАССА (Продажа)</a>
+    <!-- Новая кнопка выплаты -->
+    <a href="/payout_scan_page" class="btn btn-check" style="background: linear-gradient(to right, #8e44ad, #c0392b);">💰 ВЫПЛАТА (По чеку)</a>
+    <!-- Старая кнопка (можно оставить для ручного поиска) -->
+    <a href="/check_ticket_page" class="btn btn-check">🔍 ПРОВЕРКА (По номеру)</a>
+    <!-- История -->
+    <a href="/cashier_history" class="btn btn-set" style="background: #555;">📜 История продаж</a>
+    <a href="/settings" class="btn btn-set">⚙ Настройки чека</a>
+{% endif %}
             
             <!-- МЕНЮ ОРГАНИЗАТОРА -->
             {% if role == 'org' or role == 'admin' %}
@@ -58,4 +61,5 @@
     </div>
 
 </body>
+
 </html>

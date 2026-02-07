@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Выплата по Чеку</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; text-align: center; background: #eee; }
+        .container { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        input { font-size: 24px; padding: 10px; width: 80%; text-align: center; letter-spacing: 2px; }
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; background: #4B0082; color: white; border: none; margin-top: 10px; border-radius: 5px; }
+        
+        .ticket-item { border: 1px solid #ccc; margin: 10px 0; padding: 10px; text-align: left; border-radius: 5px; }
+        .win { background: #d4edda; border-color: #c3e6cb; }
+        .lose { background: #f8d7da; border-color: #f5c6cb; }
+        .wait { background: #fff3cd; border-color: #ffeeba; }
+        
+        .pay-btn { float: right; background: green; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" style="float: left; text-decoration: none; color: #555;">← Назад</a>
+        <h2>💰 Выплата выигрыша</h2>
+        <p>Отсканируйте штрих-код с билета/чека или введите ID транзакции (вертикальные цифры):</p>
+        
+        <form action="/payout_scan_check" method="post">
+            <input type="text" name="tr_id" placeholder="Например: 202310..." required autofocus>
+            <br>
+            <button type="submit">🔍 НАЙТИ ПОКУПКУ</button>
+        </form>
+
+        {% if result %}
+            <hr>
+            <h3>Результаты по чеку #{{ tr_id }}</h3>
+            
+            {% for t in tickets %}
+                <div class="ticket-item {% if t.status == 'paid' %}win{% elif t.win_amount > 0 %}win{% elif t.status == 'checked' %}lose{% else %}wait{% endif %}">
+                    <strong>Билет #{{ t.id }}</strong>
+                    
+                    {% if t.status == 'available' or t.status == 'sold' %}
+                        <span style="float: right;">⏳ Розыгрыш не проведен</span>
+                    {% elif t.status == 'paid' %}
+                        <span style="float: right;">✅ ВЫПЛАЧЕНО ({{ t.win_amount }} ₽)</span>
+                    {% elif t.win_amount > 0 %}
+                        <span style="color: green; font-weight: bold; margin-left: 10px;">ВЫИГРЫШ: {{ t.win_amount }} ₽</span>
+                        <!-- Кнопка выплаты конкретного билета -->
+                        <form action="/payout_from_scan" method="post" style="display:inline;">
+                            <input type="hidden" name="ticket_id" value="{{ t.id }}">
+                            <input type="hidden" name="tr_id" value="{{ tr_id }}">
+                            <button type="submit" class="pay-btn">ВЫДАТЬ ДЕНЬГИ</button>
+                        </form>
+                    {% else %}
+                        <span style="float: right;">😞 Без выигрыша</span>
+                    {% endif %}
+                </div>
+            {% endfor %}
+            
+        {% endif %}
+        
+        {% if error %}
+            <p style="color: red; font-weight: bold;">{{ error }}</p>
+        {% endif %}
+    </div>
+</body>
+</html>

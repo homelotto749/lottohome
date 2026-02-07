@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>История продаж</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background: #4B0082; color: white; }
+        .btn { padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 14px; }
+        .btn-print { background: #28a745; color: white; }
+        .btn-back { background: #555; color: white; display: inline-block; margin-bottom: 15px; padding: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="btn btn-back">← В главное меню</a>
+        <h2>📜 История моих продаж</h2>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Дата</th>
+                    <th>ID Транзакции (Штрих-код)</th>
+                    <th>Билетов</th>
+                    <th>Сумма</th>
+                    <th>Действие</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tr in transactions %}
+                <tr>
+                    <td>{{ tr.date_str }}</td>
+                    <td style="font-family: monospace; font-weight: bold;">{{ tr.id }}</td>
+                    <td>{{ tr.tickets|length }}</td>
+                    <td>{{ tr.amount }} ₽</td>
+                    <td>
+                        <!-- Кнопка повторной печати -->
+                        <a href="/reprint/{{ tr.id }}" class="btn btn-print" target="_blank">🖨 ПЕЧАТЬ</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5">Продаж пока нет.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

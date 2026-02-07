@@ -422,5 +422,55 @@ def save_settings():
     db.collection('config').document('main').set({'shop_address': request.form['shop_address']}, merge=True)
     return redirect(url_for('settings'))
 
+# --- АНАЛИТИКА ОРГАНИЗАТОРА ---
+
+@app.route('/org_stats')
+def org_stats():
+    if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))
+    
+    # Считаем продажи по каждому продавцу
+    # (Это не супер-оптимально для 1млн записей, но для старта пойдет)
+    transactions = db.collection('transactions').stream()
+    sellers = {}
+    
+    for tr in transactions:
+        d = tr.to_dict()
+        email = d.get('seller', 'Неизвестно')
+        if email not in sellers:
+            sellers[email] = {'email': email, 'count': 0, 'total': 0}
+        
+        # Считаем билеты в транзакции
+        tickets_count = len(d.get('tickets', []))
+        sellers[email]['count'] += tickets_count
+        sellers[email]['total'] += d.get('amount', 0)
+        
+    return render_template('organizer_stats.html', sellers=list(sellers.values()))
+
+@app.route('/draw_map/<draw_id>')
+def draw_map(draw_id):
+    if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))
+    
+    # Получаем ВСЕ билеты тиража
+    tickets_stream = db.collection('tickets').where('draw_id', '==', draw_id).stream()
+    tickets = sorted([t.to_dict() for t in tickets_stream], key=lambda x: x['ticket_number'])
+    
+    return render_template('organizer_stats.html', draw_id=draw_id, tickets=tickets)
+
+@app.route('/seller_history/<email>')
+def seller_history(email):
+    if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))
+    
+    # Используем шаблон кассира, но показываем данные другого человека
+    stream = db.collection('transactions').where('seller', '==', email).stream()
+    history = []
+    for doc in stream:
+        d = doc.to_dict()
+        d['date_str'] = d['date'].strftime("%Y-%m-%d %H:%M") if d.get('date') else "---"
+        history.append(d)
+    history.sort(key=lambda x: x.get('date_str', ''), reverse=True)
+    
+    return render_template('cashier_history.html', transactions=history)
+
 if __name__ == '__main__':
     app.run(debug=True)
+

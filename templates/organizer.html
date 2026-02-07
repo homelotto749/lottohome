@@ -4,83 +4,133 @@
     <meta charset="UTF-8">
     <title>Панель Организатора</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; }
-        .container { max-width: 800px; margin: auto; }
-        .card { border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; border-radius: 8px; background: #f9f9f9; }
-        input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .btn-play { background: red; color: white; padding: 5px; text-decoration: none; border-radius: 3px; font-size: 12px; display: inline-block; }
-        .btn-stats { background: #007bff; color: white; padding: 5px; text-decoration: none; border-radius: 3px; font-size: 12px; display: inline-block; margin-top: 5px;}
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f4f4f4; }
+        .container { max-width: 900px; margin: auto; }
+        
+        /* Карточки и блоки */
+        .card { border: 1px solid #ddd; padding: 25px; margin-bottom: 20px; border-radius: 10px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        
+        /* Заголовки и текст */
+        h1 { color: #333; }
+        label { font-weight: bold; display: block; margin-top: 10px; }
+        input, button { padding: 12px; margin: 5px 0; width: 100%; box-sizing: border-box; border-radius: 5px; border: 1px solid #ccc; }
+        
+        /* Кнопки */
+        button[type="submit"] { background: #4B0082; color: white; cursor: pointer; border: none; font-size: 16px; transition: 0.3s; }
+        button[type="submit"]:hover { background: #3a006b; }
+        
+        .btn-analytics { 
+            display: inline-block; background: #ffc107; color: #333; padding: 10px 20px; 
+            text-decoration: none; border-radius: 5px; font-weight: bold; margin-bottom: 20px; 
+            border: 1px solid #e0a800;
+        }
+        
+        /* Таблица */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; border-radius: 8px; overflow: hidden; }
+        th, td { border-bottom: 1px solid #eee; padding: 12px; text-align: left; }
+        th { background-color: #4B0082; color: white; }
+        tr:hover { background-color: #f9f9f9; }
+        
+        /* Статусы и мелкие кнопки */
+        .status-open { color: #28a745; font-weight: bold; }
+        .status-closed { color: #dc3545; font-weight: bold; }
+        
+        .btn-action { display: inline-block; padding: 6px 12px; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; margin-top: 5px; }
+        .play-btn { background: #dc3545; } /* Красная кнопка розыгрыша */
+        .stats-btn { background: #007bff; } /* Синяя кнопка статистики */
+        .map-link { color: #6610f2; font-size: 13px; text-decoration: none; display: block; margin-top: 5px; font-weight: bold; }
+        .map-link:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>👨‍💼 Панель Организатора (HOMELOTO)</h1>
-        <p>Вы вошли как: {{ email }} (<a href="/">В меню</a>)</p>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>👨‍💼 Организатор (HOMELOTO)</h1>
+            <a href="/" style="color: #666;">Выход в меню</a>
+        </div>
+        
+        <p>Вы вошли как: <strong>{{ email }}</strong></p>
 
-        <!-- Сообщения -->
+        <!-- КНОПКА ОТЧЕТОВ -->
+        <a href="/org_stats" class="btn-analytics">📊 Отчеты по продавцам (Выручка)</a>
+
+        <!-- Сообщения об ошибках/успехе -->
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             {% for category, message in messages %}
-              <p style="padding: 10px; background: #ddd;">{{ message }}</p>
+              <div style="padding: 15px; margin-bottom: 20px; border-radius: 5px; background: {% if category=='error' %}#f8d7da{% else %}#d4edda{% endif %}; color: {% if category=='error' %}#721c24{% else %}#155724{% endif %};">
+                  {{ message }}
+              </div>
             {% endfor %}
           {% endif %}
         {% endwith %}
 
-        <!-- Форма создания -->
+        <!-- ФОРМА СОЗДАНИЯ -->
         <div class="card">
             <h3>🆕 Создать новый тираж</h3>
             <form action="/create_draw" method="post">
-                <label>Номер тиража (ID):</label>
-                <input type="text" name="draw_id" required placeholder="Например: 005">
+                <div style="display: flex; gap: 10px;">
+                    <div style="flex: 1;">
+                        <label>Номер тиража (ID):</label>
+                        <input type="text" name="draw_id" required placeholder="005">
+                    </div>
+                    <div style="flex: 1;">
+                        <label>Джекпот (руб):</label>
+                        <input type="number" name="jackpot" value="10000">
+                    </div>
+                </div>
                 
                 <label>Дата и Время розыгрыша:</label>
-                <!-- ВАЖНО: datetime-local позволяет выбрать часы и минуты -->
                 <input type="datetime-local" name="draw_date" required>
-                
-                <label>Джекпот (руб):</label>
-                <input type="number" name="jackpot" value="10000">
                 
                 <label>Количество билетов:</label>
                 <input type="number" name="ticket_count" value="50" max="500" required>
 
-                <hr>
-                <label>Ссылка на трансляцию (для QR-кода):</label>
-                <input type="url" name="broadcast_link" placeholder="https://youtube.com/...">
-                <small style="color: gray;">Оставьте пустым, если трансляции нет.</small>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
                 
-                <button type="submit" style="background: #4B0082; color: white; cursor: pointer; margin-top: 15px;">🚀 Создать тираж</button>
+                <label>Ссылка на трансляцию (YouTube/VK):</label>
+                <input type="url" name="broadcast_link" placeholder="https://youtube.com/live/...">
+                <small style="color: gray;">Оставьте пустым, если QR-код трансляции не нужен.</small>
+                
+                <button type="submit">🚀 Сгенерировать билеты</button>
             </form>
         </div>
 
-        <!-- Список -->
-        <h3>📜 История тиражей</h3>
+        <!-- СПИСОК ТИРАЖЕЙ -->
+        <h3>📜 Активные и завершенные тиражи</h3>
         <table>
             <thead>
                 <tr>
                     <th>Тираж</th>
-                    <th>Дата</th>
+                    <th>Дата розыгрыша</th>
                     <th>Билетов</th>
-                    <th>Статус</th>
+                    <th>Статус / Действия</th>
                 </tr>
             </thead>
             <tbody>
                 {% for draw in draws %}
                 <tr>
-                    <td>#{{ draw.id }}</td>
+                    <td><strong>#{{ draw.id }}</strong></td>
+                    <!-- Заменяем T на пробел для красоты -->
                     <td>{{ draw.date.replace('T', ' ') }}</td>
-                    <td>{{ draw.total_tickets }}</td>
+                    <td>{{ draw.total_tickets }} шт.</td>
                     <td>
+                        <!-- КАРТА БИЛЕТОВ (Видна всегда) -->
+                        <a href="/draw_map/{{ draw.id }}" class="map-link">🗺 Посмотреть карту билетов</a>
+
                         {% if draw.status == 'open' %}
-                            <span style="color: green; font-weight: bold;">🟢 Идет продажа</span><br>
-                            <a href="/play_draw/{{ draw.id }}" class="btn-play">🎱 ПРОВЕСТИ РОЗЫГРЫШ</a>
+                            <span class="status-open">🟢 Продажа открыта</span><br>
+                            <a href="/play_draw/{{ draw.id }}" class="btn-action play-btn">🎱 ПРОВЕСТИ РОЗЫГРЫШ</a>
+                        
                         {% elif draw.status == 'closed' %}
-                            <span style="color: red;">🔴 Завершен</span><br>
-                            <a href="/draw_details/{{ draw.id }}" class="btn-stats">📊 Статистика</a>
+                            <span class="status-closed">🔴 Завершен</span><br>
+                            <a href="/draw_details/{{ draw.id }}" class="btn-action stats-btn">📊 Итоги и Победители</a>
                         {% endif %}
                     </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" style="text-align: center; color: gray;">Тиражей пока нет. Создайте первый!</td>
                 </tr>
                 {% endfor %}
             </tbody>

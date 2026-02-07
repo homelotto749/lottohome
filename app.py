@@ -317,14 +317,19 @@ def cashier_panel():
 @app.route('/buy_tickets', methods=['POST'])
 def buy_tickets():
     if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
-    ids = request.form.getlist('ticket_ids')
-    if not ids: return redirect(url_for('cashier_panel', draw_id=request.form.get('draw_id')))
     
-    # Генерация ID транзакции (дата + рандом)
+    ids = request.form.getlist('ticket_ids')
+    draw_id = request.form.get('draw_id')
+    
+    if not ids: return redirect(url_for('cashier_panel', draw_id=draw_id))
+    
+    # ID транзакции
     tr_id = datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(10, 99))
     now = datetime.now()
-    batch = db.batch(); sold_data = []
+    batch = db.batch()
+    sold_data = []
     
+    # Продажа билетов
     for tid in ids:
         d = db.collection('tickets').document(tid).get().to_dict(); d['id'] = tid
         sold_data.append(d)
@@ -334,15 +339,26 @@ def buy_tickets():
         })
     batch.commit()
     
-    draw_info = db.collection('draws').document(request.form.get('draw_id')).get().to_dict()
+    # Генерация картинок билетов
+    draw_info = db.collection('draws').document(draw_id).get().to_dict()
+    broadcast_link = draw_info.get('broadcast_link')
+    imgs = [create_ticket_image(t, tr_id, broadcast_link) for t in sold_data]
     
-    # Передаем tr_id для штрих-кода
-    imgs = [create_ticket_image(t, tr_id, draw_info.get('broadcast_link')) for t in sold_data]
+    # --- ИЗМЕНЕНИЕ: ПОЛУЧЕНИЕ АДРЕСА ---
+    # Берем адрес из профиля КАССИРА (того, кто сейчас в сессии)
+    user_doc = db.collection('users').document(session['user_id']).get()
+    shop_addr = user_doc.to_dict().get('shop_address', 'Адрес не указан')
     
-    cfg = db.collection('config').document('main').get()
-    rec_url = create_receipt_image(tr_id, [{'num': t['ticket_number'], 'draw': t['draw_id']} for t in sold_data], len(ids)*100, now.strftime("%Y-%m-%d %H:%M"), cfg.to_dict().get('shop_address', '') if cfg.exists else '')
+    # Генерируем чек с ЭТИМ адресом
+    rec_url = create_receipt_image(
+        tr_id, 
+        [{'num': t['ticket_number'], 'draw': t['draw_id']} for t in sold_data], 
+        len(ids)*100, 
+        now.strftime("%Y-%m-%d %H:%M"), 
+        shop_addr # <-- Передаем личный адрес
+    )
     
-    # СОХРАНЯЕМ ИСТОРИЮ
+    # Сохраняем в историю
     db.collection('transactions').document(tr_id).set({
         'id': tr_id, 'date': now, 'amount': len(ids)*100, 'seller': session.get('email'),
         'tickets': ids, 'ticket_urls': imgs, 'receipt_url': rec_url
@@ -414,8 +430,31 @@ def payout():
 
 @app.route('/settings')
 def settings():
-    cfg = db.collection('config').document('main').get()
-    return render_template('settings.html', address=cfg.to_dict().get('shop_address', '') if cfg.exists else '')
+    # Пускаем кассира и админа
+    if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
+    
+    # Берем адрес из профиля ТЕКУЩЕГО пользователя
+    user_doc = db.collection('users').document(session['user_id']).get()
+    
+    # Если адреса нет, будет пустая строка
+    current_address = user_doc.to_dict().get('shop_address', '')
+    
+    return render_template('settings.html', address=current_address)
+
+@app.route('/save_settings', methods=['POST'])
+def save_settings():
+    if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
+    
+    new_address = request.form['shop_address']
+    
+    # Сохраняем адрес В ПРОФИЛЬ пользователя (merge=True, чтобы не стереть роль и email)
+    db.collection('users').document(session['user_id']).set(
+        {'shop_address': new_address}, 
+        merge=True
+    )
+    
+    flash('Ваш адрес торговой точки сохранен!', 'success')
+    return redirect(url_for('settings'))
 
 @app.route('/save_settings', methods=['POST'])
 def save_settings():
@@ -473,4 +512,5 @@ def seller_history(email):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 

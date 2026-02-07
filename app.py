@@ -41,28 +41,33 @@ cloudinary.config(
   api_secret = os.environ.get('CLOUDINARY_API_SECRET')
 )
 
-# --- ГЕНЕРАТОР БИЛЕТА (КРАСИВЫЙ) ---
-def create_ticket_image(ticket_data, broadcast_link=None):
-    # 1. Белый фон
+# --- ГЕНЕРАТОР БИЛЕТА (НОВЫЙ ШТРИХ-КОД) ---
+def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
+    """
+    tr_id - это ID покупки (транзакции), который пойдет в штрих-код
+    """
     width, height = 650, 280
     img = Image.new('RGB', (width, height), color='white')
     draw = ImageDraw.Draw(img)
     primary_color = "#4B0082" 
     
-    # 2. Шрифты
+    # Шрифты
     try:
         font_path = os.path.join(os.path.dirname(__file__), 'font.ttf')
         font_header = ImageFont.truetype(font_path, 28)
         font_text = ImageFont.truetype(font_path, 18)
         font_nums = ImageFont.truetype(font_path, 24)
         font_small = ImageFont.truetype(font_path, 12)
+        # Шрифт для вертикального текста ID
+        font_id = ImageFont.truetype(font_path, 14) 
     except:
         font_header = ImageFont.load_default()
         font_text = ImageFont.load_default()
         font_nums = ImageFont.load_default()
         font_small = ImageFont.load_default()
+        font_id = ImageFont.load_default()
 
-    # 3. Рисуем Дизайн
+    # Дизайн
     draw.rectangle([(0, 0), (width, 60)], fill=primary_color)
     draw.text((20, 15), "HOMELOTO 7/49", font=font_header, fill="white")
     
@@ -74,15 +79,13 @@ def create_ticket_image(ticket_data, broadcast_link=None):
     draw.text((150, 70), f"Дата: {date_text}", font=font_text, fill="black")
     draw.text((20, 100), f"Цена: 100 руб", font=font_text, fill="black")
     
-    # Числа в кружочках
+    # Числа
     numbers = ticket_data['numbers']
     start_x, start_y, gap = 30, 160, 65
     for i, num in enumerate(numbers):
         x = start_x + (i * gap)
         y = start_y
         draw.ellipse([x, y, x+50, y+50], outline=primary_color, width=3)
-        
-        # Центрируем число
         if hasattr(draw, 'textlength'):
              txt_w = draw.textlength(str(num), font=font_nums)
              txt_x = x + (50 - txt_w) / 2
@@ -90,30 +93,43 @@ def create_ticket_image(ticket_data, broadcast_link=None):
              txt_x = x + 15
         draw.text((txt_x, y + 12), str(num), font=font_nums, fill="black")
 
-    # 4. Штрих-код (Безопасный)
+    # --- ШТРИХ-КОД (ID ПОКУПКИ) ---
     try:
         rv = io.BytesIO()
         Code128 = barcode.get_barcode_class('code128')
-        my_barcode = Code128(full_ticket_id, writer=ImageWriter())
+        # Кодируем ID ПОКУПКИ (tr_id), а не номер билета!
+        my_barcode = Code128(tr_id, writer=ImageWriter())
         my_barcode.write(rv, options={'text_distance': 1, 'module_height': 8, 'write_text': False})
         rv.seek(0)
         
+        # Сам штрих-код
         bc_img = Image.open(rv).rotate(90, expand=True)
-        bc_img.thumbnail((80, 200))
-        img.paste(bc_img, (570, 70))
-    except:
-        # Если штрих-код не сработал - рисуем просто место под него
-        draw.rectangle([(570, 70), (600, 200)], outline="#eee")
+        bc_img.thumbnail((50, 200)) # Чуть уже
+        img.paste(bc_img, (580, 70))
+        
+        # --- ВЕРТИКАЛЬНЫЙ ТЕКСТ ID (Рядом со штрихом) ---
+        # Создаем временную картинку для текста
+        txt_img = Image.new('RGBA', (200, 30), (255, 255, 255, 0))
+        txt_draw = ImageDraw.Draw(txt_img)
+        txt_draw.text((0, 0), f"TR: {tr_id}", font=font_id, fill="black")
+        # Поворачиваем
+        txt_rotated = txt_img.rotate(90, expand=True)
+        # Вставляем левее штрих-кода
+        img.paste(txt_rotated, (550, 70), txt_rotated)
 
-    # 5. QR Код
+    except Exception as e:
+        print(f"Barcode Error: {e}")
+        draw.rectangle([(580, 70), (620, 200)], outline="#eee")
+
+    # QR
     if broadcast_link:
         try:
             qr = qrcode.make(broadcast_link).resize((80, 80))
-            img.paste(qr, (480, 70))
-            draw.text((480, 155), "Live", font=font_small, fill="black")
+            img.paste(qr, (450, 70))
+            draw.text((450, 155), "Live", font=font_small, fill="black")
         except: pass
 
-    # 6. Загрузка
+    # Загрузка
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -139,7 +155,7 @@ def create_receipt_image(transaction_id, items, total, date_str, address_text=""
             draw.text((20, y), address_text[i:i+30], font=font, fill="black"); y += 15
         y += 15
     draw.text((20, y), f"Date: {date_str}", font=font, fill="black"); y += 20
-    draw.text((20, y), f"ID: {transaction_id[:8]}", font=font, fill="black"); y += 30
+    draw.text((20, y), f"ID: {transaction_id}", font=font, fill="black"); y += 30
     
     for item in items:
         draw.text((20, y), f"#{item['num']} (T-{item['draw']}) 100r", font=font, fill="black"); y += 20
@@ -224,20 +240,51 @@ def cashier_panel():
 
 @app.route('/buy_tickets', methods=['POST'])
 def buy_tickets():
+    if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
     ids = request.form.getlist('ticket_ids')
     if not ids: return redirect(url_for('cashier_panel'))
-    tr_id = str(uuid.uuid4()); now = datetime.now()
-    batch = db.batch(); sold_data = []
+    
+    # 1. Генерируем КОРОТКИЙ цифровой ID транзакции (для штрих-кода)
+    # Пример: 202310251430 + случайное число (16 цифр)
+    tr_id = datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(10, 99))
+    now = datetime.now()
+    
+    # 2. Обновляем билеты
+    batch = db.batch()
+    sold_data = []
     for tid in ids:
         d = db.collection('tickets').document(tid).get().to_dict(); d['id'] = tid
         sold_data.append(d)
-        batch.update(db.collection('tickets').document(tid), {'status': 'sold', 'purchase_date': now, 'transaction_id': tr_id, 'payment_method': request.form['payment_method'], 'sold_by': session.get('email')})
+        batch.update(db.collection('tickets').document(tid), {
+            'status': 'sold', 
+            'purchase_date': now, 
+            'transaction_id': tr_id, # Сохраняем ID транзакции в билет
+            'payment_method': request.form['payment_method'], 
+            'sold_by': session.get('email')
+        })
     batch.commit()
     
+    # 3. Генерируем картинки
     draw_info = db.collection('draws').document(request.form.get('draw_id')).get().to_dict()
-    imgs = [create_ticket_image(t, draw_info.get('broadcast_link')) for t in sold_data]
+    # Передаем tr_id в генератор билета для штрих-кода!
+    imgs = [create_ticket_image(t, tr_id, draw_info.get('broadcast_link')) for t in sold_data]
+    
     cfg = db.collection('config').document('main').get()
-    rec_url = create_receipt_image(tr_id, [{'num': t['ticket_number'], 'draw': t['draw_id']} for t in sold_data], len(ids)*100, now.strftime("%Y-%m-%d %H:%M"), cfg.to_dict().get('shop_address', '') if cfg.exists else '')
+    addr = cfg.to_dict().get('shop_address', '') if cfg.exists else ''
+    rec_url = create_receipt_image(tr_id, [{'num': t['ticket_number'], 'draw': t['draw_id']} for t in sold_data], len(ids)*100, now.strftime("%Y-%m-%d %H:%M"), addr)
+    
+    # 4. СОХРАНЯЕМ ТРАНЗАКЦИЮ В ИСТОРИЮ (Для Этапа 2)
+    # Создаем документ в новой коллекции transactions
+    db.collection('transactions').document(tr_id).set({
+        'id': tr_id,
+        'date': now,
+        'amount': len(ids)*100,
+        'seller': session.get('email'),
+        'tickets': [t['id'] for t in sold_data], # Список ID билетов
+        'ticket_urls': imgs, # Сохраняем ссылки на билеты!
+        'receipt_url': rec_url # Сохраняем ссылку на чек!
+    })
+
     return render_template('print_view.html', tickets_imgs=imgs, receipt_img=rec_url)
 
 @app.route('/play_draw/<draw_id>')

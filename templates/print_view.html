@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Печать билетов HOMELOTO</title>
+    <title>Печать HOMELOTO</title>
     <style>
         body { background: #555; text-align: center; font-family: sans-serif; }
         .page { 
@@ -16,34 +16,74 @@
             flex-direction: column;
             align-items: center;
         }
-        .controls { padding: 10px; color: white; }
-        .ticket-img { max-width: 100%; margin-bottom: 20px; border: 1px dashed #ccc; }
-        .receipt-img { max-width: 300px; margin-bottom: 40px; border: 1px solid #eee; }
+        .controls { padding: 20px; color: white; background: #333; margin-bottom: 20px; }
+        .ticket-img, .receipt-img { max-width: 100%; margin-bottom: 20px; border: 1px dashed #ccc; }
+        .receipt-img { width: 300px; }
         
+        .toggle-label { font-size: 18px; margin: 0 15px; cursor: pointer; display: inline-block; }
+        input[type="checkbox"] { transform: scale(1.5); margin-right: 5px; }
+
+        /* СКРЫТИЕ ПРИ ПЕЧАТИ */
         @media print {
-            body { background: white; }
+            body { background: white; margin: 0; }
             .controls { display: none; }
             .page { box-shadow: none; margin: 0; width: 100%; }
+            
+            /* Если класс .hide-print добавлен, элемент не печатается */
+            .hide-print { display: none !important; }
         }
+
+        /* Визуальное скрытие на экране (прозрачность), чтобы кассир видел, что отключено */
+        .dimmed { opacity: 0.2; }
     </style>
+    <script>
+        function toggleSection(id, checkbox) {
+            var el = document.getElementById(id);
+            if (checkbox.checked) {
+                el.classList.remove('hide-print');
+                el.classList.remove('dimmed');
+            } else {
+                el.classList.add('hide-print');
+                el.classList.add('dimmed');
+            }
+        }
+    </script>
 </head>
 <body>
 
     <div class="controls">
         <h2>Покупка завершена!</h2>
-        <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer;">🖨 ПЕЧАТЬ</button>
+        
+        <div style="margin: 20px 0;">
+            <label class="toggle-label">
+                <input type="checkbox" checked onclick="toggleSection('receiptArea', this)"> 🧾 Печатать ЧЕК
+            </label>
+            <label class="toggle-label">
+                <input type="checkbox" checked onclick="toggleSection('ticketsArea', this)"> 🎟 Печатать БИЛЕТЫ
+            </label>
+        </div>
+
+        <button onclick="window.print()" style="padding: 15px 30px; font-size: 20px; font-weight: bold; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px;">🖨 ОТПРАВИТЬ НА ПЕЧАТЬ</button>
         <br><br>
-        <a href="/cashier" style="color: #ddd;">Вернуться в кассу</a>
+        <a href="/cashier" style="color: #ddd;">Вернуться в кассу (Новая продажа)</a>
     </div>
 
     <div class="page">
-        <h3>Чек покупателя</h3>
-        <img src="{{ receipt_img }}" class="receipt-img">
+        <!-- Зона чека -->
+        <div id="receiptArea">
+            <h3>Чек покупателя</h3>
+            <img src="{{ receipt_img }}" class="receipt-img">
+            <hr style="width: 100%; border-top: 1px dashed black; margin: 20px 0;">
+        </div>
         
-        <h3>Билеты ({{ tickets_imgs|length }} шт.)</h3>
-        {% for img_url in tickets_imgs %}
-            <img src="{{ img_url }}" class="ticket-img">
-        {% endfor %}
+        <!-- Зона билетов -->
+        <div id="ticketsArea">
+            <h3>Билеты ({{ tickets_imgs|length }} шт.)</h3>
+            {% for img_url in tickets_imgs %}
+                <img src="{{ img_url }}" class="ticket-img">
+                <br>
+            {% endfor %}
+        </div>
     </div>
 
 </body>

@@ -25,6 +25,13 @@ from barcode.writer import ImageWriter
 import cloudinary
 import cloudinary.uploader
 
+# ПОЧТА (НОВЫЕ БИБЛИОТЕКИ)
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+from email.mime.image import MIMEImage
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'super_secret_key')
 
@@ -43,13 +50,10 @@ if not firebase_admin._apps:
             cred = credentials.Certificate(cred_path)
         else:
             cred = None
-            print("CRITICAL: Ключ Firebase не найден!")
-
-    if cred:
-        firebase_admin.initialize_app(cred)
+    if cred: firebase_admin.initialize_app(cred)
 
 db = firestore.client()
-FIREBASE_API_KEY = os.environ.get('FIREBASE_API_KEY', 'LOCAL_KEY')
+FIREBASE_API_KEY = os.environ.get('FIREBASE_API_KEY', 'LOCAL')
 
 # Cloudinary
 cloudinary.config(
@@ -58,28 +62,27 @@ cloudinary.config(
   api_secret = os.environ.get('CLOUDINARY_API_SECRET')
 )
 
+# Почта
+MAIL_USER = os.environ.get('MAIL_USER')
+MAIL_PASS = os.environ.get('MAIL_PASS')
+
 # ==========================================
 # 2. ГЕНЕРАЦИЯ КАРТИНОК
 # ==========================================
 
 def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
-    """
-    Рисует билет.
-    tr_id - ID покупки (для штрих-кода).
-    """
     width, height = 650, 280
     img = Image.new('RGB', (width, height), color='white')
     draw = ImageDraw.Draw(img)
     primary_color = "#4B0082" 
     
-    # Шрифты
     try:
         font_path = os.path.join(os.path.dirname(__file__), 'font.ttf')
         font_header = ImageFont.truetype(font_path, 28)
         font_text = ImageFont.truetype(font_path, 18)
         font_nums = ImageFont.truetype(font_path, 24)
         font_small = ImageFont.truetype(font_path, 12)
-        font_id = ImageFont.truetype(font_path, 14) # Шрифт для ID покупки
+        font_id = ImageFont.truetype(font_path, 14)
     except:
         font_header = ImageFont.load_default()
         font_text = ImageFont.load_default()
@@ -87,7 +90,6 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
         font_small = ImageFont.load_default()
         font_id = ImageFont.load_default()
 
-    # Дизайн
     draw.rectangle([(0, 0), (width, 60)], fill=primary_color)
     draw.text((20, 15), "HOMELOTO 7/49", font=font_header, fill="white")
     
@@ -99,7 +101,6 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
     draw.text((150, 70), f"Дата: {date_text}", font=font_text, fill="black")
     draw.text((20, 100), f"Цена: 100 руб", font=font_text, fill="black")
     
-    # Числа
     numbers = ticket_data['numbers']
     start_x, start_y, gap = 30, 160, 65
     for i, num in enumerate(numbers):
@@ -113,31 +114,25 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
              txt_x = x + 15
         draw.text((txt_x, y + 12), str(num), font=font_nums, fill="black")
 
-    # --- ШТРИХ-КОД (Кодируем ID покупки) ---
     try:
         rv = io.BytesIO()
         Code128 = barcode.get_barcode_class('code128')
-        # Кодируем tr_id (цифры)
         my_barcode = Code128(tr_id, writer=ImageWriter())
         my_barcode.write(rv, options={'text_distance': 1, 'module_height': 8, 'write_text': False})
         rv.seek(0)
         
         bc_img = Image.open(rv).rotate(90, expand=True)
-        bc_img.thumbnail((60, 200)) # Чуть уже
+        bc_img.thumbnail((60, 200))
         img.paste(bc_img, (580, 70))
         
-        # Пишем ID покупки вертикально рядом
         txt_img = Image.new('RGBA', (200, 30), (255, 255, 255, 0))
         txt_draw = ImageDraw.Draw(txt_img)
         txt_draw.text((0, 0), f"Check: {tr_id}", font=font_id, fill="black")
         txt_rotated = txt_img.rotate(90, expand=True)
         img.paste(txt_rotated, (550, 70), txt_rotated)
-
-    except Exception as e:
-        print(f"Barcode Error: {e}")
+    except:
         draw.rectangle([(580, 70), (620, 200)], outline="#eee")
 
-    # QR
     if broadcast_link:
         try:
             qr = qrcode.make(broadcast_link).resize((80, 80))
@@ -145,7 +140,6 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
             draw.text((450, 155), "Live", font=font_small, fill="black")
         except: pass
 
-    # Загрузка
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -153,8 +147,7 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
     try:
         res = cloudinary.uploader.upload(img_byte_arr, folder="homeloto_tickets")
         return res['secure_url']
-    except Exception as e:
-        print(f"Cloudinary Error: {e}")
+    except:
         return "https://via.placeholder.com/650x280?text=Error+Cloudinary"
 
 def create_receipt_image(transaction_id, items, total, date_str, address_text=""):
@@ -186,28 +179,109 @@ def create_receipt_image(transaction_id, items, total, date_str, address_text=""
     except: return ""
 
 # ==========================================
-# 3. МАРШРУТЫ (ROUTES)
+# 3. ПОЧТА (E-MAIL SENDER)
 # ==========================================
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+def download_and_convert(url, filename_base):
+    """Скачивает картинку и делает из неё PDF"""
+    try:
+        response = requests.get(url)
+        img_bytes = io.BytesIO(response.content)
+        img = Image.open(img_bytes).convert('RGB')
+        
+        # 1. Картинка (JPG/PNG)
+        img_file = io.BytesIO()
+        img.save(img_file, format='PNG')
+        img_file.seek(0)
+        
+        # 2. PDF
+        pdf_file = io.BytesIO()
+        img.save(pdf_file, format='PDF')
+        pdf_file.seek(0)
+        
+        return img_file, pdf_file
+    except:
+        return None, None
+
+@app.route('/send_email', methods=['POST'])
+def send_email():
+    if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
+    
+    email_to = request.form['email']
+    tr_id = request.form['tr_id']
+    
+    # Загружаем данные о покупке из базы
+    doc = db.collection('transactions').document(tr_id).get()
+    if not doc.exists: return "Ошибка: Чек не найден"
+    data = doc.to_dict()
+    
+    receipt_url = data.get('receipt_url')
+    ticket_urls = data.get('ticket_urls', [])
+    
+    # Формируем письмо
+    msg = MIMEMultipart()
+    msg['From'] = MAIL_USER
+    msg['To'] = email_to
+    msg['Subject'] = f"Ваши билеты HOMELOTO (Чек #{tr_id})"
+    
+    body = "Спасибо за покупку!\nВаши электронные билеты и чек во вложении.\n\nСохраните их!\nУдачи в розыгрыше!"
+    msg.attach(MIMEText(body, 'plain'))
+    
+    # --- ВЛОЖЕНИЯ ---
+    
+    # 1. ЧЕК
+    img_data, pdf_data = download_and_convert(receipt_url, "receipt")
+    if img_data:
+        # Картинка
+        att_img = MIMEImage(img_data.read(), name=f"Check_{tr_id}.png")
+        msg.attach(att_img)
+        # PDF
+        att_pdf = MIMEApplication(pdf_data.read(), Name=f"Check_{tr_id}.pdf")
+        att_pdf['Content-Disposition'] = f'attachment; filename="Check_{tr_id}.pdf"'
+        msg.attach(att_pdf)
+        
+    # 2. БИЛЕТЫ
+    for i, t_url in enumerate(ticket_urls):
+        img_data, pdf_data = download_and_convert(t_url, f"ticket_{i}")
+        if img_data:
+            # Картинка
+            att_img = MIMEImage(img_data.read(), name=f"Ticket_{i+1}.png")
+            msg.attach(att_img)
+            # PDF
+            att_pdf = MIMEApplication(pdf_data.read(), Name=f"Ticket_{i+1}.pdf")
+            att_pdf['Content-Disposition'] = f'attachment; filename="Ticket_{i+1}.pdf"'
+            msg.attach(att_pdf)
+
+    # ОТПРАВКА
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(MAIL_USER, MAIL_PASS)
+        server.send_message(msg)
+        server.quit()
+        flash(f'Письмо успешно отправлено на {email_to}', 'success')
+    except Exception as e:
+        flash(f'Ошибка отправки: {str(e)}', 'error')
+        
+    # Возвращаем обратно на страницу печати
+    return redirect(url_for('reprint', tr_id=tr_id))
+
+# ==========================================
+# 4. МАРШРУТЫ
+# ==========================================
+
 def get_transaction_details(tr_id):
-    """Ищет транзакцию и подгружает данные билетов"""
     tr_doc = db.collection('transactions').document(tr_id).get()
     if not tr_doc.exists: return None
-    
     tr_data = tr_doc.to_dict()
     ticket_ids = tr_data.get('tickets', [])
-    
     tickets_info = []
     for tid in ticket_ids:
         t_doc = db.collection('tickets').document(tid).get()
         if t_doc.exists:
-            t_data = t_doc.to_dict()
-            t_data['id'] = tid
+            t_data = t_doc.to_dict(); t_data['id'] = tid
             tickets_info.append(t_data)
     return tickets_info
-
-# --- ГЛАВНЫЕ СТРАНИЦЫ ---
 
 @app.route('/')
 def index():
@@ -224,8 +298,7 @@ def login():
             if 'error' in r: return render_template('login.html', error="Неверный email или пароль")
             uid = r['localId']
             u = db.collection('users').document(uid).get()
-            role = u.to_dict().get('role', 'none') if u.exists else 'none'
-            session['user_id'] = uid; session['role'] = role; session['email'] = email
+            session['user_id'] = uid; session['email'] = email; session['role'] = u.to_dict().get('role', 'none') if u.exists else 'none'
             return redirect(url_for('index'))
         except: return render_template('login.html', error="Ошибка входа")
     return render_template('login.html')
@@ -235,13 +308,11 @@ def register():
     try:
         u = auth.create_user(email=request.form['email'], password=request.form['password'])
         db.collection('users').document(u.uid).set({'email': request.form['email'], 'role': 'none'})
-        return render_template('login.html', error="Регистрация успешна! Ждите активации.")
+        return render_template('login.html', error="Успешно! Ждите активации.")
     except: return render_template('login.html', error="Ошибка регистрации")
 
 @app.route('/logout')
 def logout(): session.clear(); return redirect(url_for('login'))
-
-# --- ОРГАНИЗАТОР ---
 
 @app.route('/organizer')
 def organizer_panel():
@@ -255,7 +326,6 @@ def create_draw():
     did = request.form['draw_id']
     if db.collection('draws').document(did).get().exists: 
         flash(f'Тираж {did} уже существует!', 'error'); return redirect(url_for('organizer_panel'))
-    
     cnt = int(request.form['ticket_count'])
     db.collection('draws').document(did).set({
         'date': request.form['draw_date'], 'jackpot': int(request.form['jackpot']),
@@ -287,7 +357,7 @@ def run_draw_logic():
         if pz > 0: wins += 1
         batch.update(db.collection('tickets').document(t.id), {'matches_count': mt, 'win_amount': pz, 'status': 'checked'})
     batch.update(dr, {'status': 'closed', 'winning_numbers': wn}); batch.commit()
-    flash(f'Тираж завершен! Победителей: {wins}', 'success'); return redirect(url_for('organizer_panel'))
+    flash(f'Победителей: {wins}', 'success'); return redirect(url_for('organizer_panel'))
 
 @app.route('/draw_details/<draw_id>')
 def draw_details(draw_id):
@@ -302,7 +372,31 @@ def draw_details(draw_id):
     tkts.sort(key=lambda x: x['win_amount'], reverse=True)
     return render_template('draw_details.html', draw=dr, tickets=tkts)
 
-# --- КАССИР ---
+@app.route('/org_stats')
+def org_stats():
+    if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))
+    transactions = db.collection('transactions').stream(); sellers = {}
+    for tr in transactions:
+        d = tr.to_dict(); email = d.get('seller', 'Неизвестно')
+        if email not in sellers: sellers[email] = {'email': email, 'count': 0, 'total': 0}
+        sellers[email]['count'] += len(d.get('tickets', [])); sellers[email]['total'] += d.get('amount', 0)
+    return render_template('organizer_stats.html', sellers=list(sellers.values()))
+
+@app.route('/draw_map/<draw_id>')
+def draw_map(draw_id):
+    if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))
+    tickets = sorted([t.to_dict() for t in db.collection('tickets').where('draw_id', '==', draw_id).stream()], key=lambda x: x['ticket_number'])
+    return render_template('organizer_stats.html', draw_id=draw_id, tickets=tickets)
+
+@app.route('/seller_history/<email>')
+def seller_history(email):
+    if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))
+    stream = db.collection('transactions').where('seller', '==', email).stream(); history = []
+    for doc in stream:
+        d = doc.to_dict(); d['date_str'] = d['date'].strftime("%Y-%m-%d %H:%M") if d.get('date') else "---"
+        history.append(d)
+    history.sort(key=lambda x: x.get('date_str', ''), reverse=True)
+    return render_template('cashier_history.html', transactions=history)
 
 @app.route('/cashier')
 def cashier_panel():
@@ -317,65 +411,32 @@ def cashier_panel():
 @app.route('/buy_tickets', methods=['POST'])
 def buy_tickets():
     if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
-    
     ids = request.form.getlist('ticket_ids')
-    draw_id = request.form.get('draw_id')
-    
-    if not ids: return redirect(url_for('cashier_panel', draw_id=draw_id))
-    
-    # ID транзакции
+    if not ids: return redirect(url_for('cashier_panel', draw_id=request.form.get('draw_id')))
     tr_id = datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(10, 99))
-    now = datetime.now()
-    batch = db.batch()
-    sold_data = []
-    
-    # Продажа билетов
+    now = datetime.now(); batch = db.batch(); sold_data = []
     for tid in ids:
         d = db.collection('tickets').document(tid).get().to_dict(); d['id'] = tid
         sold_data.append(d)
-        batch.update(db.collection('tickets').document(tid), {
-            'status': 'sold', 'purchase_date': now, 'transaction_id': tr_id, 
-            'payment_method': request.form['payment_method'], 'sold_by': session.get('email')
-        })
+        batch.update(db.collection('tickets').document(tid), {'status': 'sold', 'purchase_date': now, 'transaction_id': tr_id, 'payment_method': request.form['payment_method'], 'sold_by': session.get('email')})
     batch.commit()
     
-    # Генерация картинок билетов
-    draw_info = db.collection('draws').document(draw_id).get().to_dict()
-    broadcast_link = draw_info.get('broadcast_link')
-    imgs = [create_ticket_image(t, tr_id, broadcast_link) for t in sold_data]
+    draw_info = db.collection('draws').document(request.form.get('draw_id')).get().to_dict()
+    imgs = [create_ticket_image(t, tr_id, draw_info.get('broadcast_link')) for t in sold_data]
+    cfg = db.collection('config').document('main').get()
+    rec_url = create_receipt_image(tr_id, [{'num': t['ticket_number'], 'draw': t['draw_id']} for t in sold_data], len(ids)*100, now.strftime("%Y-%m-%d %H:%M"), cfg.to_dict().get('shop_address', '') if cfg.exists else '')
     
-    # --- ИЗМЕНЕНИЕ: ПОЛУЧЕНИЕ АДРЕСА ---
-    # Берем адрес из профиля КАССИРА (того, кто сейчас в сессии)
-    user_doc = db.collection('users').document(session['user_id']).get()
-    shop_addr = user_doc.to_dict().get('shop_address', 'Адрес не указан')
+    db.collection('transactions').document(tr_id).set({'id': tr_id, 'date': now, 'amount': len(ids)*100, 'seller': session.get('email'), 'tickets': ids, 'ticket_urls': imgs, 'receipt_url': rec_url})
     
-    # Генерируем чек с ЭТИМ адресом
-    rec_url = create_receipt_image(
-        tr_id, 
-        [{'num': t['ticket_number'], 'draw': t['draw_id']} for t in sold_data], 
-        len(ids)*100, 
-        now.strftime("%Y-%m-%d %H:%M"), 
-        shop_addr # <-- Передаем личный адрес
-    )
-    
-    # Сохраняем в историю
-    db.collection('transactions').document(tr_id).set({
-        'id': tr_id, 'date': now, 'amount': len(ids)*100, 'seller': session.get('email'),
-        'tickets': ids, 'ticket_urls': imgs, 'receipt_url': rec_url
-    })
-    
-    return render_template('print_view.html', tickets_imgs=imgs, receipt_img=rec_url)
-
-# --- НОВЫЕ ФУНКЦИИ (ИСТОРИЯ И ВЫПЛАТА ПО ШТРИХУ) ---
+    # ТУТ ВАЖНО: Передаем tr_id в шаблон, чтобы форма почты знала, что отправлять
+    return render_template('print_view.html', tickets_imgs=imgs, receipt_img=rec_url, tr_id=tr_id)
 
 @app.route('/cashier_history')
 def cashier_history():
     if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
-    stream = db.collection('transactions').where('seller', '==', session.get('email')).stream()
-    history = []
+    stream = db.collection('transactions').where('seller', '==', session.get('email')).stream(); history = []
     for doc in stream:
-        d = doc.to_dict()
-        d['date_str'] = d['date'].strftime("%Y-%m-%d %H:%M") if d.get('date') else "---"
+        d = doc.to_dict(); d['date_str'] = d['date'].strftime("%Y-%m-%d %H:%M") if d.get('date') else "---"
         history.append(d)
     history.sort(key=lambda x: x.get('date_str', ''), reverse=True)
     return render_template('cashier_history.html', transactions=history)
@@ -386,7 +447,8 @@ def reprint(tr_id):
     doc = db.collection('transactions').document(tr_id).get()
     if not doc.exists: return "Чек не найден"
     d = doc.to_dict()
-    return render_template('print_view.html', tickets_imgs=d.get('ticket_urls', []), receipt_img=d.get('receipt_url', ''))
+    # ТУТ ВАЖНО: Тоже передаем tr_id
+    return render_template('print_view.html', tickets_imgs=d.get('ticket_urls', []), receipt_img=d.get('receipt_url', ''), tr_id=tr_id)
 
 @app.route('/payout_scan_page')
 def payout_scan_page():
@@ -396,23 +458,20 @@ def payout_scan_page():
 @app.route('/payout_scan_check', methods=['POST'])
 def payout_scan_check():
     if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
-    tr_id = request.form['tr_id'].strip()
-    tickets = get_transaction_details(tr_id)
+    tr_id = request.form['tr_id'].strip(); tickets = get_transaction_details(tr_id)
     if tickets is None: return render_template('payout_scan.html', error="Чек не найден!", tr_id=tr_id)
     return render_template('payout_scan.html', result=True, tr_id=tr_id, tickets=tickets)
 
 @app.route('/payout_from_scan', methods=['POST'])
 def payout_from_scan():
     if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
-    ticket_id = request.form['ticket_id']
-    tr_id = request.form['tr_id']
+    ticket_id = request.form['ticket_id']; tr_id = request.form['tr_id']
     ref = db.collection('tickets').document(ticket_id)
     if ref.get().to_dict().get('status') != 'paid':
         ref.update({'status': 'paid', 'paid_at': datetime.now(), 'paid_by': session.get('email')})
         flash(f'Выплачено: {ticket_id}', 'success')
     return render_template('payout_scan.html', result=True, tr_id=tr_id, tickets=get_transaction_details(tr_id))
 
-# Старые маршруты проверки (оставили на всякий случай)
 @app.route('/check_ticket_page')
 def check_ticket_page(): return render_template('check_ticket.html')
 
@@ -430,87 +489,13 @@ def payout():
 
 @app.route('/settings')
 def settings():
-    # Пускаем кассира и админа
-    if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
-    
-    # Берем адрес из профиля ТЕКУЩЕГО пользователя
-    user_doc = db.collection('users').document(session['user_id']).get()
-    
-    # Если адреса нет, будет пустая строка
-    current_address = user_doc.to_dict().get('shop_address', '')
-    
-    return render_template('settings.html', address=current_address)
-
-@app.route('/save_settings', methods=['POST'])
-def save_settings():
-    if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
-    
-    new_address = request.form['shop_address']
-    
-    # Сохраняем адрес В ПРОФИЛЬ пользователя (merge=True, чтобы не стереть роль и email)
-    db.collection('users').document(session['user_id']).set(
-        {'shop_address': new_address}, 
-        merge=True
-    )
-    
-    flash('Ваш адрес торговой точки сохранен!', 'success')
-    return redirect(url_for('settings'))
+    cfg = db.collection('config').document('main').get()
+    return render_template('settings.html', address=cfg.to_dict().get('shop_address', '') if cfg.exists else '')
 
 @app.route('/save_settings', methods=['POST'])
 def save_settings():
     db.collection('config').document('main').set({'shop_address': request.form['shop_address']}, merge=True)
     return redirect(url_for('settings'))
 
-# --- АНАЛИТИКА ОРГАНИЗАТОРА ---
-
-@app.route('/org_stats')
-def org_stats():
-    if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))
-    
-    # Считаем продажи по каждому продавцу
-    # (Это не супер-оптимально для 1млн записей, но для старта пойдет)
-    transactions = db.collection('transactions').stream()
-    sellers = {}
-    
-    for tr in transactions:
-        d = tr.to_dict()
-        email = d.get('seller', 'Неизвестно')
-        if email not in sellers:
-            sellers[email] = {'email': email, 'count': 0, 'total': 0}
-        
-        # Считаем билеты в транзакции
-        tickets_count = len(d.get('tickets', []))
-        sellers[email]['count'] += tickets_count
-        sellers[email]['total'] += d.get('amount', 0)
-        
-    return render_template('organizer_stats.html', sellers=list(sellers.values()))
-
-@app.route('/draw_map/<draw_id>')
-def draw_map(draw_id):
-    if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))
-    
-    # Получаем ВСЕ билеты тиража
-    tickets_stream = db.collection('tickets').where('draw_id', '==', draw_id).stream()
-    tickets = sorted([t.to_dict() for t in tickets_stream], key=lambda x: x['ticket_number'])
-    
-    return render_template('organizer_stats.html', draw_id=draw_id, tickets=tickets)
-
-@app.route('/seller_history/<email>')
-def seller_history(email):
-    if session.get('role') not in ['org', 'admin']: return redirect(url_for('index'))
-    
-    # Используем шаблон кассира, но показываем данные другого человека
-    stream = db.collection('transactions').where('seller', '==', email).stream()
-    history = []
-    for doc in stream:
-        d = doc.to_dict()
-        d['date_str'] = d['date'].strftime("%Y-%m-%d %H:%M") if d.get('date') else "---"
-        history.append(d)
-    history.sort(key=lambda x: x.get('date_str', ''), reverse=True)
-    
-    return render_template('cashier_history.html', transactions=history)
-
 if __name__ == '__main__':
     app.run(debug=True)
-
-

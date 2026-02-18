@@ -6,3 +6,4 @@ qrcode
 cloudinary
 gunicorn
 python-barcode
+gevent

@@ -25,12 +25,10 @@ from barcode.writer import ImageWriter
 import cloudinary
 import cloudinary.uploader
 
-# ПОЧТА (НОВЫЕ БИБЛИОТЕКИ)
+# ПОЧТА (Облегченная версия - HTML без тяжелых вложений)
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-from email.mime.image import MIMEImage
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'super_secret_key')
@@ -67,15 +65,19 @@ MAIL_USER = os.environ.get('MAIL_USER')
 MAIL_PASS = os.environ.get('MAIL_PASS')
 
 # ==========================================
-# 2. ГЕНЕРАЦИЯ КАРТИНОК
+# 2. ГЕНЕРАЦИЯ КАРТИНОК (ХУДОЖНИК)
 # ==========================================
 
 def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
+    """
+    Рисует КРАСИВЫЙ билет с белым фоном, кружочками и штрих-кодом.
+    """
     width, height = 650, 280
     img = Image.new('RGB', (width, height), color='white')
     draw = ImageDraw.Draw(img)
     primary_color = "#4B0082" 
     
+    # Шрифты
     try:
         font_path = os.path.join(os.path.dirname(__file__), 'font.ttf')
         font_header = ImageFont.truetype(font_path, 28)
@@ -90,17 +92,20 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
         font_small = ImageFont.load_default()
         font_id = ImageFont.load_default()
 
+    # Дизайн (Шапка)
     draw.rectangle([(0, 0), (width, 60)], fill=primary_color)
     draw.text((20, 15), "HOMELOTO 7/49", font=font_header, fill="white")
     
     full_ticket_id = f"{ticket_data['draw_id']}-{ticket_data['ticket_number']}"
     draw.text((450, 20), f"#{full_ticket_id}", font=font_header, fill="white")
     
+    # Инфо
     date_text = str(ticket_data.get('draw_date', '---')).replace('T', ' ')
     draw.text((20, 70), f"Тираж: {ticket_data['draw_id']}", font=font_text, fill="black")
     draw.text((150, 70), f"Дата: {date_text}", font=font_text, fill="black")
     draw.text((20, 100), f"Цена: 100 руб", font=font_text, fill="black")
     
+    # Числа в кружочках
     numbers = ticket_data['numbers']
     start_x, start_y, gap = 30, 160, 65
     for i, num in enumerate(numbers):
@@ -114,6 +119,7 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
              txt_x = x + 15
         draw.text((txt_x, y + 12), str(num), font=font_nums, fill="black")
 
+    # Штрих-код (Безопасный блок)
     try:
         rv = io.BytesIO()
         Code128 = barcode.get_barcode_class('code128')
@@ -125,6 +131,7 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
         bc_img.thumbnail((60, 200))
         img.paste(bc_img, (580, 70))
         
+        # ID текстом рядом
         txt_img = Image.new('RGBA', (200, 30), (255, 255, 255, 0))
         txt_draw = ImageDraw.Draw(txt_img)
         txt_draw.text((0, 0), f"Check: {tr_id}", font=font_id, fill="black")
@@ -133,6 +140,7 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
     except:
         draw.rectangle([(580, 70), (620, 200)], outline="#eee")
 
+    # QR
     if broadcast_link:
         try:
             qr = qrcode.make(broadcast_link).resize((80, 80))
@@ -140,6 +148,7 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
             draw.text((450, 155), "Live", font=font_small, fill="black")
         except: pass
 
+    # Загрузка
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -179,29 +188,8 @@ def create_receipt_image(transaction_id, items, total, date_str, address_text=""
     except: return ""
 
 # ==========================================
-# 3. ПОЧТА (E-MAIL SENDER)
+# 3. ПОЧТА (ОБЛЕГЧЕННАЯ HTML-ВЕРСИЯ)
 # ==========================================
-
-def download_and_convert(url, filename_base):
-    """Скачивает картинку и делает из неё PDF"""
-    try:
-        response = requests.get(url)
-        img_bytes = io.BytesIO(response.content)
-        img = Image.open(img_bytes).convert('RGB')
-        
-        # 1. Картинка (JPG/PNG)
-        img_file = io.BytesIO()
-        img.save(img_file, format='PNG')
-        img_file.seek(0)
-        
-        # 2. PDF
-        pdf_file = io.BytesIO()
-        img.save(pdf_file, format='PDF')
-        pdf_file.seek(0)
-        
-        return img_file, pdf_file
-    except:
-        return None, None
 
 @app.route('/send_email', methods=['POST'])
 def send_email():
@@ -210,7 +198,6 @@ def send_email():
     email_to = request.form['email']
     tr_id = request.form['tr_id']
     
-    # Загружаем данные о покупке из базы
     doc = db.collection('transactions').document(tr_id).get()
     if not doc.exists: return "Ошибка: Чек не найден"
     data = doc.to_dict()
@@ -218,41 +205,37 @@ def send_email():
     receipt_url = data.get('receipt_url')
     ticket_urls = data.get('ticket_urls', [])
     
-    # Формируем письмо
-    msg = MIMEMultipart()
+    # Формируем HTML-письмо с картинками
+    tickets_html = ""
+    for url in ticket_urls:
+        tickets_html += f'<img src="{url}" style="max-width:100%; border:1px solid #ccc; margin:10px 0;"><br>'
+
+    html_content = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; text-align: center; background-color: #f4f4f4; padding: 20px;">
+        <div style="background: white; padding: 20px; border-radius: 10px; max-width: 600px; margin: auto;">
+            <h2 style="color: #4B0082;">Спасибо за покупку в HOMELOTO!</h2>
+            <p>Ваши билеты успешно зарегистрированы.</p>
+            
+            <h3>🧾 Ваш чек:</h3>
+            <img src="{receipt_url}" style="max-width:300px; border:1px solid #eee;"><br>
+            
+            <h3>🎟 Ваши билеты:</h3>
+            {tickets_html}
+            
+            <hr>
+            <p style="color: grey; font-size: 12px;">Сохраните это письмо. Желаем удачи!</p>
+        </div>
+    </body>
+    </html>
+    """
+
+    msg = MIMEMultipart('alternative')
     msg['From'] = MAIL_USER
     msg['To'] = email_to
-    msg['Subject'] = f"Ваши билеты HOMELOTO (Чек #{tr_id})"
-    
-    body = "Спасибо за покупку!\nВаши электронные билеты и чек во вложении.\n\nСохраните их!\nУдачи в розыгрыше!"
-    msg.attach(MIMEText(body, 'plain'))
-    
-    # --- ВЛОЖЕНИЯ ---
-    
-    # 1. ЧЕК
-    img_data, pdf_data = download_and_convert(receipt_url, "receipt")
-    if img_data:
-        # Картинка
-        att_img = MIMEImage(img_data.read(), name=f"Check_{tr_id}.png")
-        msg.attach(att_img)
-        # PDF
-        att_pdf = MIMEApplication(pdf_data.read(), Name=f"Check_{tr_id}.pdf")
-        att_pdf['Content-Disposition'] = f'attachment; filename="Check_{tr_id}.pdf"'
-        msg.attach(att_pdf)
-        
-    # 2. БИЛЕТЫ
-    for i, t_url in enumerate(ticket_urls):
-        img_data, pdf_data = download_and_convert(t_url, f"ticket_{i}")
-        if img_data:
-            # Картинка
-            att_img = MIMEImage(img_data.read(), name=f"Ticket_{i+1}.png")
-            msg.attach(att_img)
-            # PDF
-            att_pdf = MIMEApplication(pdf_data.read(), Name=f"Ticket_{i+1}.pdf")
-            att_pdf['Content-Disposition'] = f'attachment; filename="Ticket_{i+1}.pdf"'
-            msg.attach(att_pdf)
+    msg['Subject'] = f"HOMELOTO: Билеты (Заказ #{tr_id})"
+    msg.attach(MIMEText(html_content, 'html'))
 
-    # ОТПРАВКА
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -263,11 +246,10 @@ def send_email():
     except Exception as e:
         flash(f'Ошибка отправки: {str(e)}', 'error')
         
-    # Возвращаем обратно на страницу печати
     return redirect(url_for('reprint', tr_id=tr_id))
 
 # ==========================================
-# 4. МАРШРУТЫ
+# 4. МАРШРУТЫ (ОСНОВНЫЕ)
 # ==========================================
 
 def get_transaction_details(tr_id):
@@ -298,7 +280,8 @@ def login():
             if 'error' in r: return render_template('login.html', error="Неверный email или пароль")
             uid = r['localId']
             u = db.collection('users').document(uid).get()
-            session['user_id'] = uid; session['email'] = email; session['role'] = u.to_dict().get('role', 'none') if u.exists else 'none'
+            role = u.to_dict().get('role', 'none') if u.exists else 'none'
+            session['user_id'] = uid; session['role'] = role; session['email'] = email
             return redirect(url_for('index'))
         except: return render_template('login.html', error="Ошибка входа")
     return render_template('login.html')
@@ -423,12 +406,11 @@ def buy_tickets():
     
     draw_info = db.collection('draws').document(request.form.get('draw_id')).get().to_dict()
     imgs = [create_ticket_image(t, tr_id, draw_info.get('broadcast_link')) for t in sold_data]
-    cfg = db.collection('config').document('main').get()
+    cfg = db.collection('users').document(session['user_id']).get() # Берем ЛИЧНЫЙ адрес
     rec_url = create_receipt_image(tr_id, [{'num': t['ticket_number'], 'draw': t['draw_id']} for t in sold_data], len(ids)*100, now.strftime("%Y-%m-%d %H:%M"), cfg.to_dict().get('shop_address', '') if cfg.exists else '')
     
     db.collection('transactions').document(tr_id).set({'id': tr_id, 'date': now, 'amount': len(ids)*100, 'seller': session.get('email'), 'tickets': ids, 'ticket_urls': imgs, 'receipt_url': rec_url})
     
-    # ТУТ ВАЖНО: Передаем tr_id в шаблон, чтобы форма почты знала, что отправлять
     return render_template('print_view.html', tickets_imgs=imgs, receipt_img=rec_url, tr_id=tr_id)
 
 @app.route('/cashier_history')
@@ -447,7 +429,6 @@ def reprint(tr_id):
     doc = db.collection('transactions').document(tr_id).get()
     if not doc.exists: return "Чек не найден"
     d = doc.to_dict()
-    # ТУТ ВАЖНО: Тоже передаем tr_id
     return render_template('print_view.html', tickets_imgs=d.get('ticket_urls', []), receipt_img=d.get('receipt_url', ''), tr_id=tr_id)
 
 @app.route('/payout_scan_page')
@@ -489,13 +470,15 @@ def payout():
 
 @app.route('/settings')
 def settings():
-    cfg = db.collection('config').document('main').get()
-    return render_template('settings.html', address=cfg.to_dict().get('shop_address', '') if cfg.exists else '')
+    if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
+    user = db.collection('users').document(session['user_id']).get()
+    return render_template('settings.html', address=user.to_dict().get('shop_address', ''))
 
 @app.route('/save_settings', methods=['POST'])
 def save_settings():
-    db.collection('config').document('main').set({'shop_address': request.form['shop_address']}, merge=True)
-    return redirect(url_for('settings'))
+    if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
+    db.collection('users').document(session['user_id']).set({'shop_address': request.form['shop_address']}, merge=True)
+    flash('Адрес сохранен!', 'success'); return redirect(url_for('settings'))
 
 if __name__ == '__main__':
     app.run(debug=True)

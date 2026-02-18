@@ -207,9 +207,8 @@ def send_email_thread(email_to, subject, html_content):
     try:
         # Подключаемся к Gmail
         # Используем SMTP_SSL и порт 465
-server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-# server.starttls() <-- ЭТО УДАЛИТЬ! Для SSL оно не нужно
-server.login(MAIL_USER, MAIL_PASS)
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(MAIL_USER, MAIL_PASS)
         server.send_message(msg)
         server.quit()
         print(f"✅ EMAIL SENT SUCCESS to {email_to}")
@@ -494,4 +493,5 @@ def save_settings():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 

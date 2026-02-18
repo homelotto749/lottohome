@@ -4,7 +4,6 @@ import json
 import random
 import uuid
 from datetime import datetime
-import threading # <--- ЭТО СПАСЕТ ОТ ЗАВИСАНИЯ ПОЧТЫ
 
 # Веб-сервер
 from flask import Flask, render_template, request, redirect, url_for, session, flash
@@ -26,11 +25,6 @@ from barcode.writer import ImageWriter
 import cloudinary
 import cloudinary.uploader
 
-# Почта
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'super_secret_key')
 
@@ -49,7 +43,10 @@ if not firebase_admin._apps:
             cred = credentials.Certificate(cred_path)
         else:
             cred = None
-    if cred: firebase_admin.initialize_app(cred)
+            print("CRITICAL: Ключ Firebase не найден!")
+
+    if cred:
+        firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 FIREBASE_API_KEY = os.environ.get('FIREBASE_API_KEY', 'LOCAL')
@@ -61,17 +58,13 @@ cloudinary.config(
   api_secret = os.environ.get('CLOUDINARY_API_SECRET')
 )
 
-# Почта
-MAIL_USER = os.environ.get('MAIL_USER')
-MAIL_PASS = os.environ.get('MAIL_PASS')
-
 # ==========================================
 # 2. ГЕНЕРАЦИЯ КАРТИНОК
 # ==========================================
 
 def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
     """
-    Рисует КРАСИВЫЙ билет с белым фоном, кружочками и штрих-кодом.
+    Рисует билет (Белый фон, кружочки, штрих-код)
     """
     width, height = 650, 280
     img = Image.new('RGB', (width, height), color='white')
@@ -93,20 +86,18 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
         font_small = ImageFont.load_default()
         font_id = ImageFont.load_default()
 
-    # Дизайн (Шапка)
+    # Дизайн
     draw.rectangle([(0, 0), (width, 60)], fill=primary_color)
     draw.text((20, 15), "HOMELOTO 7/49", font=font_header, fill="white")
     
     full_ticket_id = f"{ticket_data['draw_id']}-{ticket_data['ticket_number']}"
     draw.text((450, 20), f"#{full_ticket_id}", font=font_header, fill="white")
     
-    # Инфо
     date_text = str(ticket_data.get('draw_date', '---')).replace('T', ' ')
     draw.text((20, 70), f"Тираж: {ticket_data['draw_id']}", font=font_text, fill="black")
     draw.text((150, 70), f"Дата: {date_text}", font=font_text, fill="black")
     draw.text((20, 100), f"Цена: 100 руб", font=font_text, fill="black")
     
-    # Числа в кружочках
     numbers = ticket_data['numbers']
     start_x, start_y, gap = 30, 160, 65
     for i, num in enumerate(numbers):
@@ -120,12 +111,11 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
              txt_x = x + 15
         draw.text((txt_x, y + 12), str(num), font=font_nums, fill="black")
 
-    # Штрих-код (Безопасный блок)
+    # Штрих-код
     try:
         rv = io.BytesIO()
         Code128 = barcode.get_barcode_class('code128')
         my_barcode = Code128(tr_id, writer=ImageWriter())
-        # write_text=False - чтобы не падал из-за шрифтов в Linux
         my_barcode.write(rv, options={'text_distance': 1, 'module_height': 8, 'write_text': False})
         rv.seek(0)
         
@@ -133,7 +123,6 @@ def create_ticket_image(ticket_data, tr_id, broadcast_link=None):
         bc_img.thumbnail((60, 200))
         img.paste(bc_img, (580, 70))
         
-        # ID текстом рядом
         txt_img = Image.new('RGBA', (200, 30), (255, 255, 255, 0))
         txt_draw = ImageDraw.Draw(txt_img)
         txt_draw.text((0, 0), f"Check: {tr_id}", font=font_id, fill="black")
@@ -190,77 +179,7 @@ def create_receipt_image(transaction_id, items, total, date_str, address_text=""
     except: return ""
 
 # ==========================================
-# 3. ПОЧТА (ФОНОВЫЙ ПОТОК)
-# ==========================================
-
-def send_email_thread(email_to, subject, html_content):
-    """
-    Эта функция запускается в фоне.
-    Она не заставляет пользователя ждать и не роняет сервер по тайм-ауту.
-    """
-    msg = MIMEMultipart('alternative')
-    msg['From'] = MAIL_USER
-    msg['To'] = email_to
-    msg['Subject'] = subject
-    msg.attach(MIMEText(html_content, 'html'))
-
-    try:
-        # Подключаемся к Gmail
-        # Используем SMTP_SSL и порт 465
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.login(MAIL_USER, MAIL_PASS)
-        server.send_message(msg)
-        server.quit()
-        print(f"✅ EMAIL SENT SUCCESS to {email_to}")
-    except Exception as e:
-        print(f"❌ EMAIL FAILED: {e}")
-
-@app.route('/send_email', methods=['POST'])
-def send_email():
-    if session.get('role') not in ['cass', 'admin']: return redirect(url_for('index'))
-    
-    email_to = request.form['email']
-    tr_id = request.form['tr_id']
-    
-    # Быстро берем ссылки из базы
-    doc = db.collection('transactions').document(tr_id).get()
-    if not doc.exists: return "Ошибка: Чек не найден"
-    data = doc.to_dict()
-    
-    receipt_url = data.get('receipt_url')
-    ticket_urls = data.get('ticket_urls', [])
-    
-    # Формируем HTML (легкий, без вложений)
-    tickets_html = ""
-    for url in ticket_urls:
-        tickets_html += f'<img src="{url}" style="max-width:100%; border:1px solid #ccc; margin:10px 0;"><br>'
-
-    html_content = f"""
-    <html>
-    <body style="font-family: Arial, sans-serif; text-align: center; background-color: #f4f4f4; padding: 20px;">
-        <div style="background: white; padding: 20px; border-radius: 10px; max-width: 600px; margin: auto;">
-            <h2 style="color: #4B0082;">HOMELOTO</h2>
-            <p>Спасибо за покупку!</p>
-            <hr>
-            <h3>Ваш чек:</h3>
-            <img src="{receipt_url}" style="max-width:300px; border:1px solid #eee;"><br>
-            <h3>Билеты:</h3>
-            {tickets_html}
-        </div>
-    </body>
-    </html>
-    """
-
-    # ЗАПУСКАЕМ В ФОНЕ (Магия Threading)
-    # Сервер не будет ждать отправки, он сразу перенаправит пользователя.
-    thread = threading.Thread(target=send_email_thread, args=(email_to, f"HOMELOTO: Заказ #{tr_id}", html_content))
-    thread.start()
-    
-    flash(f'Письмо отправляется на {email_to} (фоновый режим)...', 'success')
-    return redirect(url_for('reprint', tr_id=tr_id))
-
-# ==========================================
-# 4. МАРШРУТЫ (ОСНОВНЫЕ)
+# 3. МАРШРУТЫ
 # ==========================================
 
 def get_transaction_details(tr_id):
@@ -493,5 +412,3 @@ def save_settings():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-
